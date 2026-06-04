@@ -2,6 +2,16 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { GameProvider } from '@/context/GameContext';
 import { MultiplayerContextProvider } from '@/context/MultiplayerContext';
 import Game from '@/components/Game';
@@ -18,6 +28,7 @@ import type { User } from '@supabase/supabase-js';
 
 const STORAGE_KEY = 'isocity-game-state';
 const SAVED_CITIES_INDEX_KEY = 'isocity-saved-cities-index';
+const PLAYER_PROFILE_PREFIX = 'nps-city-player-profile-';
 
 // Background color to filter from sprite sheets (red)
 const BACKGROUND_COLOR = { r: 255, g: 0, b: 0 };
@@ -318,17 +329,63 @@ function SavedCityCard({ city, onLoad, onDelete }: { city: SavedCityMeta; onLoad
 
 const SAVED_CITY_PREFIX = 'isocity-city-';
 
+type PlayerProfile = {
+  id: string;
+  displayName: string;
+  email: string | null;
+  avatarUrl: string | null;
+  updatedAt: string;
+};
+
+function getDefaultPlayerName(user: User) {
+  const metadataName =
+    typeof user.user_metadata?.full_name === 'string'
+      ? user.user_metadata.full_name
+      : typeof user.user_metadata?.name === 'string'
+        ? user.user_metadata.name
+        : '';
+
+  return metadataName || user.email?.split('@')[0] || 'ผู้เล่น NPS City';
+}
+
+function getAvatarUrl(user: User) {
+  return typeof user.user_metadata?.avatar_url === 'string'
+    ? user.user_metadata.avatar_url
+    : typeof user.user_metadata?.picture === 'string'
+      ? user.user_metadata.picture
+      : null;
+}
+
+function loadLocalPlayerProfile(userId: string): PlayerProfile | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const saved = localStorage.getItem(PLAYER_PROFILE_PREFIX + userId);
+    return saved ? (JSON.parse(saved) as PlayerProfile) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLocalPlayerProfile(profile: PlayerProfile) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(PLAYER_PROFILE_PREFIX + profile.id, JSON.stringify(profile));
+}
+
 function AuthControls({
   user,
+  profile,
   loading,
   onLogin,
   onLogout,
+  onEditProfile,
   compact = false,
 }: {
   user: User | null;
+  profile: PlayerProfile | null;
   loading: boolean;
   onLogin: () => void;
   onLogout: () => void;
+  onEditProfile: () => void;
   compact?: boolean;
 }) {
   if (!isSupabaseConfigured) {
@@ -362,16 +419,43 @@ function AuthControls({
   }
 
   return (
-    <div className={`${compact ? 'w-full' : 'w-64'} border border-white/10 bg-white/[0.04] px-3 py-2 text-white/70`}>
-      <div className="text-xs text-white/40">เข้าสู่ระบบแล้ว</div>
-      <div className="truncate text-sm">{user.email}</div>
-      <button
-        onClick={onLogout}
-        className="mt-2 inline-flex items-center gap-1.5 text-xs text-white/45 hover:text-white/80 transition-colors"
-      >
-        <LogOut className="h-3.5 w-3.5" />
-        ออกจากระบบ
-      </button>
+    <div className={`${compact ? 'w-full' : 'w-64'} border border-white/10 bg-white/[0.04] px-3 py-3 text-white/70`}>
+      <div className="flex items-center gap-3">
+        {profile?.avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={profile.avatarUrl}
+            alt=""
+            className="h-10 w-10 rounded-full border border-white/15"
+          />
+        ) : (
+          <div className="h-10 w-10 rounded-full border border-white/15 bg-white/10 flex items-center justify-center text-sm">
+            {(profile?.displayName || user.email || 'N').slice(0, 1).toUpperCase()}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="text-xs text-white/40">บัญชีผู้เล่น</div>
+          <div className="truncate text-sm font-medium text-white/85">
+            {profile?.displayName || getDefaultPlayerName(user)}
+          </div>
+          <div className="truncate text-xs text-white/35">{user.email}</div>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between">
+        <button
+          onClick={onEditProfile}
+          className="text-xs text-blue-300/80 hover:text-blue-200 transition-colors"
+        >
+          แก้ชื่อผู้เล่น
+        </button>
+        <button
+          onClick={onLogout}
+          className="inline-flex items-center gap-1.5 text-xs text-white/45 hover:text-white/80 transition-colors"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          ออกจากระบบ
+        </button>
+      </div>
     </div>
   );
 }
@@ -387,6 +471,10 @@ export default function HomePage() {
   const [pendingRoomCode, setPendingRoomCode] = useState<string | null>(null);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
+  const [playerProfile, setPlayerProfile] = useState<PlayerProfile | null>(null);
+  const [showProfileDialog, setShowProfileDialog] = useState(false);
+  const [profileNameInput, setProfileNameInput] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const { isMobileDevice, isSmallScreen } = useMobile();
   const isMobile = isMobileDevice || isSmallScreen;
 
@@ -453,7 +541,166 @@ export default function HomePage() {
   const handleLogout = async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
+    setPlayerProfile(null);
+    setShowProfileDialog(false);
   };
+
+  useEffect(() => {
+    if (!authUser) {
+      setPlayerProfile(null);
+      return;
+    }
+
+    const user = authUser;
+    let cancelled = false;
+
+    async function loadPlayerAccount() {
+      const localProfile = loadLocalPlayerProfile(user.id);
+      if (localProfile) {
+        setPlayerProfile(localProfile);
+        setProfileNameInput(localProfile.displayName);
+      }
+
+      let profile = localProfile;
+
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, display_name, email, avatar_url, updated_at')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (!cancelled && !error && data?.display_name) {
+          profile = {
+            id: data.id,
+            displayName: data.display_name,
+            email: data.email,
+            avatarUrl: data.avatar_url,
+            updatedAt: data.updated_at,
+          };
+          saveLocalPlayerProfile(profile);
+          setPlayerProfile(profile);
+          setProfileNameInput(profile.displayName);
+        }
+      }
+
+      if (cancelled) return;
+
+      if (!profile?.displayName) {
+        const defaultName = getDefaultPlayerName(user);
+        setProfileNameInput(defaultName);
+        setShowProfileDialog(true);
+      }
+    }
+
+    loadPlayerAccount();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser]);
+
+  const savePlayerProfile = async () => {
+    if (!authUser) return;
+    const displayName = profileNameInput.trim() || getDefaultPlayerName(authUser);
+    const profile: PlayerProfile = {
+      id: authUser.id,
+      displayName,
+      email: authUser.email ?? null,
+      avatarUrl: getAvatarUrl(authUser),
+      updatedAt: new Date().toISOString(),
+    };
+
+    setIsSavingProfile(true);
+    saveLocalPlayerProfile(profile);
+    setPlayerProfile(profile);
+
+    if (supabase) {
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({
+          id: profile.id,
+          display_name: profile.displayName,
+          email: profile.email,
+          avatar_url: profile.avatarUrl,
+          updated_at: profile.updatedAt,
+        });
+
+      if (error) {
+        console.warn('[Profile] Saved locally, but Supabase profile table is not ready:', error.message);
+      }
+    }
+
+    setIsSavingProfile(false);
+    setShowProfileDialog(false);
+  };
+
+  const profileDialog = (
+    <Dialog open={showProfileDialog} onOpenChange={(open) => {
+      if (!open && !playerProfile?.displayName) return;
+      setShowProfileDialog(open);
+    }}>
+      <DialogContent
+        onEscapeKeyDown={(event) => {
+          if (!playerProfile?.displayName) event.preventDefault();
+        }}
+        onPointerDownOutside={(event) => {
+          if (!playerProfile?.displayName) event.preventDefault();
+        }}
+        className="bg-slate-950 border-white/15 text-white"
+      >
+        <DialogHeader>
+          <DialogTitle>ตั้งค่าบัญชีผู้เล่น</DialogTitle>
+          <DialogDescription className="text-white/55">
+            ชื่อนี้จะแสดงใน NPS City, ห้อง Co-op และ Dashboard ผู้เล่น
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <Label htmlFor="player-name" className="text-white/75">
+            ชื่อผู้เล่น
+          </Label>
+          <Input
+            id="player-name"
+            value={profileNameInput}
+            onChange={(event) => setProfileNameInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                savePlayerProfile();
+              }
+            }}
+            maxLength={32}
+            className="bg-white/10 border-white/15 text-white placeholder:text-white/35 focus-visible:ring-blue-400"
+            placeholder="เช่น Bhurich, ทีมโรงไฟฟ้า, ทีมนิคม"
+            autoFocus
+          />
+          <div className="text-xs text-white/40">
+            อีเมล: {authUser?.email}
+          </div>
+        </div>
+        <DialogFooter>
+          {playerProfile?.displayName && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowProfileDialog(false)}
+              className="border-white/15 bg-transparent text-white/65 hover:bg-white/10 hover:text-white"
+            >
+              ยกเลิก
+            </Button>
+          )}
+          <Button
+            type="button"
+            onClick={savePlayerProfile}
+            disabled={isSavingProfile || profileNameInput.trim().length === 0}
+            className="bg-blue-500 text-white hover:bg-blue-400 disabled:opacity-50"
+          >
+            {isSavingProfile ? 'กำลังบันทึก...' : 'บันทึกบัญชีผู้เล่น'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 
   // Handle exit from game - refresh saved cities list
   const handleExitGame = () => {
@@ -595,9 +842,14 @@ export default function HomePage() {
           <div className="flex flex-col gap-2 sm:gap-3 w-full max-w-xs flex-shrink-0">
             <AuthControls
               user={authUser}
+              profile={playerProfile}
               loading={authLoading}
               onLogin={handleGoogleLogin}
               onLogout={handleLogout}
+              onEditProfile={() => {
+                setProfileNameInput(playerProfile?.displayName || (authUser ? getDefaultPlayerName(authUser) : ''));
+                setShowProfileDialog(true);
+              }}
               compact
             />
 
@@ -675,6 +927,7 @@ export default function HomePage() {
             onStartGame={handleCoopStart}
             pendingRoomCode={pendingRoomCode}
           />
+          {profileDialog}
         </main>
       </MultiplayerContextProvider>
     );
@@ -694,9 +947,14 @@ export default function HomePage() {
             <div className="flex flex-col gap-3">
               <AuthControls
                 user={authUser}
+                profile={playerProfile}
                 loading={authLoading}
                 onLogin={handleGoogleLogin}
                 onLogout={handleLogout}
+                onEditProfile={() => {
+                  setProfileNameInput(playerProfile?.displayName || (authUser ? getDefaultPlayerName(authUser) : ''));
+                  setShowProfileDialog(true);
+                }}
               />
 
               <Button 
@@ -775,6 +1033,7 @@ export default function HomePage() {
           onStartGame={handleCoopStart}
           pendingRoomCode={pendingRoomCode}
         />
+        {profileDialog}
       </main>
     </MultiplayerContextProvider>
   );
