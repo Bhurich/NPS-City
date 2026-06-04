@@ -12,7 +12,9 @@ import { SavedCityMeta, GameState } from '@/types/game';
 import { decompressFromUTF16, compressToUTF16 } from 'lz-string';
 import { LanguageSelector } from '@/components/ui/LanguageSelector';
 import { T } from 'gt-next';
-import { Users, X } from 'lucide-react';
+import { Loader2, LogIn, LogOut, X } from 'lucide-react';
+import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
+import type { User } from '@supabase/supabase-js';
 
 const STORAGE_KEY = 'isocity-game-state';
 const SAVED_CITIES_INDEX_KEY = 'isocity-saved-cities-index';
@@ -316,6 +318,64 @@ function SavedCityCard({ city, onLoad, onDelete }: { city: SavedCityMeta; onLoad
 
 const SAVED_CITY_PREFIX = 'isocity-city-';
 
+function AuthControls({
+  user,
+  loading,
+  onLogin,
+  onLogout,
+  compact = false,
+}: {
+  user: User | null;
+  loading: boolean;
+  onLogin: () => void;
+  onLogout: () => void;
+  compact?: boolean;
+}) {
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="w-full max-w-xs text-xs text-white/40 border border-white/10 bg-white/[0.03] px-3 py-2">
+        ยังไม่ได้เชื่อม Supabase
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="w-full max-w-xs flex items-center gap-2 text-sm text-white/50">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        กำลังตรวจสอบบัญชี...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <Button
+        onClick={onLogin}
+        variant="outline"
+        className={`${compact ? 'w-full py-3 text-sm' : 'w-64 py-5 text-base'} font-light tracking-wide bg-white/[0.04] hover:bg-white/15 text-white/75 hover:text-white border border-white/15 rounded-none transition-all duration-300`}
+      >
+        <LogIn className="mr-2 h-4 w-4" />
+        เข้าสู่ระบบด้วย Google
+      </Button>
+    );
+  }
+
+  return (
+    <div className={`${compact ? 'w-full' : 'w-64'} border border-white/10 bg-white/[0.04] px-3 py-2 text-white/70`}>
+      <div className="text-xs text-white/40">เข้าสู่ระบบแล้ว</div>
+      <div className="truncate text-sm">{user.email}</div>
+      <button
+        onClick={onLogout}
+        className="mt-2 inline-flex items-center gap-1.5 text-xs text-white/45 hover:text-white/80 transition-colors"
+      >
+        <LogOut className="h-3.5 w-3.5" />
+        ออกจากระบบ
+      </button>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [showGame, setShowGame] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
@@ -325,6 +385,8 @@ export default function HomePage() {
   const [isMultiplayer, setIsMultiplayer] = useState(false);
   const [startFreshGame, setStartFreshGame] = useState(false);
   const [pendingRoomCode, setPendingRoomCode] = useState<string | null>(null);
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const { isMobileDevice, isSmallScreen } = useMobile();
   const isMobile = isMobileDevice || isSmallScreen;
 
@@ -349,6 +411,49 @@ export default function HomePage() {
     // Use requestAnimationFrame to avoid synchronous setState in effect
     requestAnimationFrame(checkSavedGame);
   }, []);
+
+  useEffect(() => {
+    if (!supabase) {
+      setAuthLoading(false);
+      return;
+    }
+
+    let mounted = true;
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (!mounted) return;
+      setAuthUser(data.user ?? null);
+      setAuthLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    if (!supabase) return;
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo },
+    });
+
+    if (error) {
+      console.error('[Auth] Google login failed:', error);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+  };
 
   // Handle exit from game - refresh saved cities list
   const handleExitGame = () => {
@@ -488,6 +593,14 @@ export default function HomePage() {
           
           {/* Buttons - more compact */}
           <div className="flex flex-col gap-2 sm:gap-3 w-full max-w-xs flex-shrink-0">
+            <AuthControls
+              user={authUser}
+              loading={authLoading}
+              onLogin={handleGoogleLogin}
+              onLogout={handleLogout}
+              compact
+            />
+
             <Button 
               onClick={() => setShowGame(true)}
               className="w-full py-4 sm:py-6 text-lg sm:text-xl font-light tracking-wide bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-none transition-all duration-300"
@@ -579,6 +692,13 @@ export default function HomePage() {
               NPS City
             </h1>
             <div className="flex flex-col gap-3">
+              <AuthControls
+                user={authUser}
+                loading={authLoading}
+                onLogin={handleGoogleLogin}
+                onLogout={handleLogout}
+              />
+
               <Button 
                 onClick={() => setShowGame(true)}
                 className="w-64 py-8 text-2xl font-light tracking-wide bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-none transition-all duration-300"
