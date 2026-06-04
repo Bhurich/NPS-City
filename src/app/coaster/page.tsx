@@ -429,14 +429,6 @@ function CoasterPageContent() {
                 >
                   Back to NPS City
                 </Link>
-                <a
-                  href="https://github.com/amilich/isometric-city"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full text-center py-2 text-sm font-light tracking-wide text-white/40 hover:text-white/70 transition-colors duration-200"
-                >
-                  Open GitHub
-                </a>
               </div>
 
               {/* Saved Parks */}
