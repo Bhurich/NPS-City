@@ -18,6 +18,7 @@ import Game from '@/components/Game';
 import { CoopModal } from '@/components/multiplayer/CoopModal';
 import { useMobile } from '@/hooks/useMobile';
 import { getSpritePack, getSpriteCoords, DEFAULT_SPRITE_PACK_ID } from '@/lib/renderConfig';
+import { createStarterCityState, DEFAULT_GRID_SIZE } from '@/lib/simulation';
 import { SavedCityMeta, GameState } from '@/types/game';
 import { decompressFromUTF16, compressToUTF16 } from 'lz-string';
 import { LanguageSelector } from '@/components/ui/LanguageSelector';
@@ -848,8 +849,7 @@ export default function HomePage() {
       setPendingRoomCode(null);
     }
 
-    const response = await fetch('/example-states/example_state_9.json');
-    const exampleState = await response.json();
+    const exampleState = createStarterCityState(DEFAULT_GRID_SIZE, 'เมืองตัวอย่าง', { speed: 0 });
 
     try {
       const compressed = compressToUTF16(JSON.stringify({

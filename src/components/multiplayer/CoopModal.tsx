@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { GameState } from '@/types/game';
-import { createInitialGameState, DEFAULT_GRID_SIZE } from '@/lib/simulation';
+import { createInitialGameState, createStarterCityState, DEFAULT_GRID_SIZE } from '@/lib/simulation';
 import { Copy, Check, Loader2, AlertCircle, ArrowLeft, Sparkles, PencilRuler } from 'lucide-react';
 import { T, useGT, Plural, Var } from 'gt-next';
 
@@ -38,7 +38,7 @@ export function CoopModal({
 }: CoopModalProps) {
   const gt = useGT();
   const [mode, setMode] = useState<Mode>('select');
-  const [cityName, setCityName] = useState(gt('My Co-op City'));
+  const [cityName, setCityName] = useState('เมืองของทีม');
   const [joinCode, setJoinCode] = useState('');
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -109,17 +109,7 @@ export function CoopModal({
     }
 
     if (cityTemplate === 'example') {
-      const response = await fetch('/example-states/example_state_9.json');
-      if (!response.ok) {
-        throw new Error(gt('Failed to load example city'));
-      }
-      const exampleState = await response.json() as GameState;
-      return {
-        ...exampleState,
-        cityName: trimmedCityName,
-        speed: 0,
-        selectedTool: 'select',
-      };
+      return createStarterCityState(DEFAULT_GRID_SIZE, trimmedCityName, { speed: 0 });
     }
 
     return createInitialGameState(DEFAULT_GRID_SIZE, trimmedCityName);
@@ -381,13 +371,13 @@ export function CoopModal({
         <DialogContent className="sm:max-w-md bg-slate-900 border-slate-700 text-white">
           <DialogHeader>
             <DialogTitle className="text-2xl font-light text-white">
-              <T>Create Co-op City</T>
+              สร้างเมืองร่วมกัน
             </DialogTitle>
             <DialogDescription className="text-slate-400">
               {roomCode ? (
-                <T>Share the invite code with friends</T>
+                'ส่งรหัสห้องให้เพื่อนเข้ามา Join'
               ) : (
-                <T>Set up your co-op city</T>
+                'ตั้งชื่อเมือง เลือกรูปแบบ แล้วระบบจะสร้างรหัสห้องให้แชร์'
               )}
             </DialogDescription>
           </DialogHeader>
@@ -396,13 +386,13 @@ export function CoopModal({
             <div className="flex flex-col gap-4 mt-4">
               <div className="space-y-2">
                 <Label htmlFor="cityName" className="text-slate-300">
-                  <T>City Name</T>
+                  ชื่อเมือง
                 </Label>
                 <Input
                   id="cityName"
                   value={cityName}
                   onChange={(e) => setCityName(e.target.value)}
-                  placeholder={gt('My Co-op City')}
+                  placeholder="เมืองของทีม"
                   className="bg-slate-800 border-slate-600 text-white placeholder:text-slate-500"
                 />
                 <p className="text-xs text-slate-500">
@@ -437,7 +427,7 @@ export function CoopModal({
                   >
                     <Sparkles className="mb-3 h-5 w-5 text-emerald-300" />
                     <div className="text-sm font-medium">ใช้ตัวอย่าง</div>
-                    <div className="mt-1 text-xs text-slate-400">เริ่มจากเมืองตัวอย่าง แล้วทีมช่วยกันต่อยอด</div>
+                    <div className="mt-1 text-xs text-slate-400">เริ่มจากบ้าน ถนน โรงไฟฟ้า และระบบน้ำขนาดเล็ก</div>
                   </button>
                 </div>
               </div>
@@ -468,7 +458,7 @@ export function CoopModal({
                       Creating...
                     </T>
                   ) : (
-                    <T>Create Room</T>
+                    'สร้างห้อง'
                   )}
                 </Button>
               </div>
@@ -484,7 +474,7 @@ export function CoopModal({
               </div>
               {/* Invite Code Display */}
               <div className="bg-slate-800 rounded-2xl p-6 text-center">
-                <T><p className="text-slate-400 text-sm mb-2">Invite Code</p></T>
+                <p className="text-slate-400 text-sm mb-2">รหัสห้องสำหรับ Join</p>
                 <p className="text-4xl font-mono font-bold tracking-widest text-white">
                   <T><Var>{roomCode}</Var></T>
                 </p>
@@ -497,15 +487,15 @@ export function CoopModal({
                 className="w-full bg-transparent hover:bg-white/10 text-white border-white/20 rounded-none"
               >
                 {copied ? (
-                  <T>
+                  <>
                     <Check className="w-4 h-4 mr-2" />
-                    Copied!
-                  </T>
+                    คัดลอกแล้ว
+                  </>
                 ) : (
-                  <T>
+                  <>
                     <Copy className="w-4 h-4 mr-2" />
-                    Copy Invite Link
-                  </T>
+                    คัดลอกลิงก์ชวนเพื่อน
+                  </>
                 )}
               </Button>
 

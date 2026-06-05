@@ -549,7 +549,6 @@ export const Sidebar = React.memo(function Sidebar({ onExit }: { onExit?: () => 
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const multiplayer = useMultiplayerOptional();
-  const hasShownShareModalRef = useRef(false);
   const locale = useLocale();
   const isThai = locale?.toLowerCase().startsWith('th');
   const m = useMessages();
@@ -557,16 +556,6 @@ export const Sidebar = React.memo(function Sidebar({ onExit }: { onExit?: () => 
     const fallback = THAI_TOOL_NAMES[tool];
     return isThai && fallback ? fallback : String(m(TOOL_INFO[tool].name));
   }, [isThai, m]);
-  
-  // Auto-show share modal when first connecting as host (not guest)
-  // Guests have initialState set (received from host), hosts don't
-  useEffect(() => {
-    const isHost = multiplayer?.connectionState === 'connected' && multiplayer?.roomCode && !multiplayer?.initialState;
-    if (isHost && !hasShownShareModalRef.current) {
-      hasShownShareModalRef.current = true;
-      requestAnimationFrame(() => setShowShareModal(true));
-    }
-  }, [multiplayer?.connectionState, multiplayer?.roomCode, multiplayer?.initialState]);
   
   const handleSaveAndExit = useCallback(() => {
     saveCity();

@@ -1229,6 +1229,75 @@ export function createInitialGameState(size: number = DEFAULT_GRID_SIZE, cityNam
   };
 }
 
+export function applyStarterCityLayout(
+  state: GameState,
+  options: { speed?: 0 | 1 | 2 | 3; includeNotification?: boolean } = {}
+): GameState {
+  let nextState = state;
+  const startX = Math.max(4, Math.floor(state.gridSize / 2) - 6);
+  const startY = Math.max(4, Math.floor(state.gridSize / 2) - 2);
+
+  for (let i = 0; i < 10; i++) {
+    nextState = placeBuilding(nextState, startX + i, startY, 'road', null);
+  }
+
+  const residentialTiles = [
+    [1, -1], [2, -1], [3, -1], [4, -1],
+    [1, -2], [2, -2], [3, -2], [4, -2],
+  ];
+  const commercialTiles = [[5, 1], [6, 1], [7, 1]];
+  const industrialTiles = [[1, 2], [2, 2], [3, 2], [4, 2]];
+  const treeTiles = [[-1, -2], [-1, -1], [0, -3], [7, -2], [8, -1], [8, 1]];
+
+  for (const [dx, dy] of residentialTiles) {
+    nextState = placeBuilding(nextState, startX + dx, startY + dy, null, 'residential');
+  }
+  for (const [dx, dy] of commercialTiles) {
+    nextState = placeBuilding(nextState, startX + dx, startY + dy, null, 'commercial');
+  }
+  for (const [dx, dy] of industrialTiles) {
+    nextState = placeBuilding(nextState, startX + dx, startY + dy, null, 'industrial');
+  }
+  for (const [dx, dy] of treeTiles) {
+    nextState = placeBuilding(nextState, startX + dx, startY + dy, 'tree', null);
+  }
+
+  nextState = placeBuilding(nextState, startX + 6, startY - 2, 'park', null);
+  nextState = placeBuilding(nextState, startX + 9, startY, 'water_tower', null);
+  nextState = placeBuilding(nextState, startX - 2, startY + 2, 'power_plant', null);
+
+  const notifications = options.includeNotification === false
+    ? nextState.notifications
+    : [
+        {
+          id: `starter-city-${Date.now()}`,
+          title: 'เริ่มเมืองตัวอย่างแล้ว',
+          description: 'เมืองนี้มีบ้าน ถนน โรงไฟฟ้า และระบบน้ำขนาดเล็กให้ลองต่อยอด',
+          icon: 'trophy',
+          timestamp: Date.now(),
+        },
+        ...nextState.notifications.slice(0, 9),
+      ];
+
+  return {
+    ...nextState,
+    selectedTool: 'select',
+    speed: options.speed ?? nextState.speed,
+    notifications,
+  };
+}
+
+export function createStarterCityState(
+  size: number = DEFAULT_GRID_SIZE,
+  cityName: string = 'เมืองตัวอย่าง',
+  options: { speed?: 0 | 1 | 2 | 3; includeNotification?: boolean } = {}
+): GameState {
+  return applyStarterCityLayout(createInitialGameState(size, cityName), {
+    speed: options.speed ?? 0,
+    includeNotification: options.includeNotification,
+  });
+}
+
 // Service building configuration - defined once, reused across calls
 // Exported so overlay rendering can access radii
 const withRange = <R extends number, T extends Record<string, unknown>>(

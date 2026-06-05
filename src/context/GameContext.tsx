@@ -25,6 +25,7 @@ import {
   placeSubway,
   placeWaterTerraform,
   placeLandTerraform,
+  applyStarterCityLayout,
   checkForDiscoverableCities,
   generateRandomAdvancedCity,
   createBridgesOnPath,
@@ -1523,54 +1524,7 @@ export function GameProvider({
   const createStarterCity = useCallback(() => {
     if (readOnlyRef.current) return;
     setState((prev) => {
-      let nextState = prev;
-      const startX = Math.max(4, Math.floor(prev.gridSize / 2) - 6);
-      const startY = Math.max(4, Math.floor(prev.gridSize / 2) - 2);
-
-      for (let i = 0; i < 10; i++) {
-        nextState = placeBuilding(nextState, startX + i, startY, 'road', null);
-      }
-
-      const residentialTiles = [
-        [1, -1], [2, -1], [3, -1], [4, -1],
-        [1, -2], [2, -2], [3, -2], [4, -2],
-      ];
-      const commercialTiles = [[5, 1], [6, 1], [7, 1]];
-      const industrialTiles = [[1, 2], [2, 2], [3, 2], [4, 2]];
-      const treeTiles = [[-1, -2], [-1, -1], [0, -3], [7, -2], [8, -1], [8, 1]];
-
-      for (const [dx, dy] of residentialTiles) {
-        nextState = placeBuilding(nextState, startX + dx, startY + dy, null, 'residential');
-      }
-      for (const [dx, dy] of commercialTiles) {
-        nextState = placeBuilding(nextState, startX + dx, startY + dy, null, 'commercial');
-      }
-      for (const [dx, dy] of industrialTiles) {
-        nextState = placeBuilding(nextState, startX + dx, startY + dy, null, 'industrial');
-      }
-      for (const [dx, dy] of treeTiles) {
-        nextState = placeBuilding(nextState, startX + dx, startY + dy, 'tree', null);
-      }
-
-      nextState = placeBuilding(nextState, startX + 6, startY - 2, 'park', null);
-      nextState = placeBuilding(nextState, startX + 9, startY, 'water_tower', null);
-      nextState = placeBuilding(nextState, startX - 2, startY + 2, 'power_plant', null);
-
-      return {
-        ...nextState,
-        selectedTool: 'select',
-        speed: 1,
-        notifications: [
-          {
-            id: `starter-city-${Date.now()}`,
-            title: 'เริ่มเมืองตัวอย่างแล้ว',
-            description: 'ลองกดปุ่มเล่นเวลา แล้วดูบ้าน คน งาน และคะแนนเมืองขยับขึ้น',
-            icon: 'trophy',
-            timestamp: Date.now(),
-          },
-          ...nextState.notifications.slice(0, 9),
-        ],
-      };
+      return applyStarterCityLayout(prev, { speed: 1 });
     });
   }, []);
 
