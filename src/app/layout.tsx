@@ -1,26 +1,11 @@
 import type { Metadata, Viewport } from 'next';
-import { Playfair_Display, DM_Sans } from 'next/font/google';
 import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 import { getLocale } from "gt-next/server";
 import { GTProvider } from "gt-next";
 
-const playfair = Playfair_Display({
-  subsets: ['latin'],
-  variable: '--font-display',
-  display: 'swap',
-  weight: ['400', '500', '600', '700', '800', '900']
-});
-
-const dmSans = DM_Sans({
-  subsets: ['latin'],
-  variable: '--font-sans',
-  display: 'swap',
-  weight: ['400', '500', '600', '700']
-});
-
 export const metadata: Metadata = {
-  metadataBase: new URL('https://iso-city.com'),
+  metadataBase: new URL('https://nps-city-game.netlify.app'),
   title: {
     default: 'NPS City — Metropolis Builder',
     template: 'NPS City — %s',
@@ -66,7 +51,7 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: {children: React.ReactNode;}) {
   return (
-  <html className={`${playfair.variable} ${dmSans.variable}`} lang={await getLocale()}>
+  <html lang={await getLocale()}>
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <link rel="apple-touch-icon" href="/assets/buildings/residential.png" />

@@ -8,6 +8,8 @@
   --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
   --safe-area-inset-left: env(safe-area-inset-left, 0px);
   --safe-area-inset-right: env(safe-area-inset-right, 0px);
+  --font-display: ui-rounded, "Avenir Next", "Noto Sans Thai", "Helvetica Neue", Arial, sans-serif;
+  --font-sans: ui-rounded, "Avenir Next", "Noto Sans Thai", "Helvetica Neue", Arial, sans-serif;
 }
 
 @layer base {

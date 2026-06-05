@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import Image from 'next/image';
-import { useSearchParams, useRouter } from 'next/navigation';
 import { msg, useMessages } from 'gt-next';
 import { useGame, DayNightMode } from '@/context/GameContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -11,7 +10,6 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { SpriteTestPanel } from './SpriteTestPanel';
 import { SavedCityMeta } from '@/types/game';
 import { LocaleSelector } from 'gt-next';
 
@@ -53,19 +51,6 @@ const UI_LABELS = {
   startNewGame: msg('Start New Game'),
   confirmReset: msg('Are you sure? This will reset all progress.'),
   reset: msg('Reset'),
-  exportGame: msg('Export Game'),
-  exportGameDesc: msg('Copy your game state to share or backup'),
-  copied: msg('Copied!'),
-  copyGameState: msg('Copy Game State'),
-  importGame: msg('Import Game'),
-  importGameDesc: msg('Paste a game state to load it'),
-  pasteGameState: msg('Paste game state here...'),
-  invalidGameState: msg('Invalid game state. Please check and try again.'),
-  gameLoadedSuccess: msg('Game loaded successfully!'),
-  loadGameState: msg('Load Game State'),
-  developerTools: msg('Developer Tools'),
-  openSpriteTestView: msg('Open Sprite Test View'),
-  loadExampleState: msg('Load Example State'),
   dayNightMode: msg('Day/Night Mode'),
   dayNightModeDesc: msg('Override the time-of-day appearance without affecting time progression'),
   auto: msg('Auto'),
@@ -93,33 +78,6 @@ function formatPopulation(pop: number): string {
   return pop.toString();
 }
 
-// Helper function to load example state with proper error handling
-async function loadExampleState(
-  filename: string,
-  loadState: (stateString: string) => boolean,
-  setActivePanel: (panel: 'none' | 'budget' | 'statistics' | 'advisors' | 'settings') => void
-): Promise<void> {
-  try {
-    const response = await fetch(`/example-states/${filename}`);
-    if (!response.ok) {
-      console.error(`Failed to fetch ${filename}:`, response.status);
-      alert(`Failed to load example state: ${response.status}`);
-      return;
-    }
-    const exampleState = await response.json();
-    const success = loadState(JSON.stringify(exampleState));
-    if (success) {
-      setActivePanel('none');
-    } else {
-      console.error('loadState returned false - invalid state format for', filename);
-      alert('Failed to load example state: invalid format');
-    }
-  } catch (e) {
-    console.error('Error loading example state:', e);
-    alert(`Error loading example state: ${e}`);
-  }
-}
-
 // Format money for display
 function formatMoney(money: number): string {
   if (money >= 1000000) return `$${(money / 1000000).toFixed(1)}M`;
@@ -128,88 +86,21 @@ function formatMoney(money: number): string {
 }
 
 export function SettingsPanel() {
-  const { state, setActivePanel, setDisastersEnabled, newGame, loadState, exportState, expandCity, shrinkCity, currentSpritePack, availableSpritePacks, setSpritePack, dayNightMode, setDayNightMode, getSavedCityInfo, restoreSavedCity, clearSavedCity, savedCities, saveCity, loadSavedCity, deleteSavedCity, renameSavedCity } = useGame();
+  const { state, setActivePanel, setDisastersEnabled, newGame, expandCity, shrinkCity, currentSpritePack, availableSpritePacks, setSpritePack, dayNightMode, setDayNightMode, getSavedCityInfo, restoreSavedCity, clearSavedCity, savedCities, saveCity, loadSavedCity, deleteSavedCity, renameSavedCity } = useGame();
   const { disastersEnabled, cityName, gridSize, id: currentCityId } = state;
   const m = useMessages();
-  const searchParams = useSearchParams();
-  const router = useRouter();
   const [newCityName, setNewCityName] = useState(cityName);
   const [showNewGameConfirm, setShowNewGameConfirm] = useState(false);
   const [saveCitySuccess, setSaveCitySuccess] = useState(false);
   const [cityToDelete, setCityToDelete] = useState<SavedCityMeta | null>(null);
   const [cityToRename, setCityToRename] = useState<SavedCityMeta | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const [importValue, setImportValue] = useState('');
-  const [exportCopied, setExportCopied] = useState(false);
-  const [importError, setImportError] = useState(false);
-  const [importSuccess, setImportSuccess] = useState(false);
   const [savedCityInfo, setSavedCityInfo] = useState(getSavedCityInfo());
   
   // Refresh saved city info when panel opens
   React.useEffect(() => {
     setSavedCityInfo(getSavedCityInfo());
   }, [getSavedCityInfo]);
-  
-  // Initialize showSpriteTest from query parameter
-  const spriteTestFromUrl = searchParams?.get('spriteTest') === 'true';
-  const [showSpriteTest, setShowSpriteTest] = useState(spriteTestFromUrl);
-  const lastUrlValueRef = useRef(spriteTestFromUrl);
-  const isUpdatingFromStateRef = useRef(false);
-  
-  // Sync state with query parameter when URL changes externally
-  useEffect(() => {
-    const spriteTestParam = searchParams?.get('spriteTest') === 'true';
-    // Only update if URL value actually changed and we're not updating from state
-    if (spriteTestParam !== lastUrlValueRef.current && !isUpdatingFromStateRef.current) {
-      lastUrlValueRef.current = spriteTestParam;
-      setTimeout(() => setShowSpriteTest(spriteTestParam), 0);
-    }
-  }, [searchParams]);
-  
-  // Sync query parameter when showSpriteTest changes (but avoid loops)
-  useEffect(() => {
-    const currentParam = searchParams?.get('spriteTest') === 'true';
-    if (currentParam === showSpriteTest) return; // Already in sync
-    
-    isUpdatingFromStateRef.current = true;
-    lastUrlValueRef.current = showSpriteTest;
-    
-    const params = new URLSearchParams(searchParams?.toString() || '');
-    if (showSpriteTest) {
-      params.set('spriteTest', 'true');
-    } else {
-      params.delete('spriteTest');
-    }
-    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
-    router.replace(newUrl, { scroll: false });
-    
-    // Reset flag after URL update
-    setTimeout(() => {
-      isUpdatingFromStateRef.current = false;
-    }, 0);
-  }, [showSpriteTest, searchParams, router]);
-  
-  const handleCopyExport = async () => {
-    const exported = exportState();
-    await navigator.clipboard.writeText(exported);
-    setExportCopied(true);
-    setTimeout(() => setExportCopied(false), 2000);
-  };
-  
-  const handleImport = () => {
-    setImportError(false);
-    setImportSuccess(false);
-    if (importValue.trim()) {
-      const success = loadState(importValue.trim());
-      if (success) {
-        setImportSuccess(true);
-        setImportValue('');
-        setTimeout(() => setImportSuccess(false), 2000);
-      } else {
-        setImportError(true);
-      }
-    }
-  };
   
   return (
     <Dialog open={true} onOpenChange={() => setActivePanel('none')}>
@@ -550,121 +441,30 @@ export function SettingsPanel() {
           )}
           
           <Separator />
-          
+
           <div>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-3">{m(UI_LABELS.exportGame)}</div>
-            <p className="text-muted-foreground text-xs mb-2">{m(UI_LABELS.exportGameDesc)}</p>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={handleCopyExport}
-            >
-              {exportCopied ? `✓ ${m(UI_LABELS.copied)}` : m(UI_LABELS.copyGameState)}
-            </Button>
-          </div>
-          
-          <div>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-3">{m(UI_LABELS.importGame)}</div>
-            <p className="text-muted-foreground text-xs mb-2">{m(UI_LABELS.importGameDesc)}</p>
-            <textarea
-              className="w-full h-20 bg-background border border-border rounded-md p-2 text-xs font-mono resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-              placeholder={String(m(UI_LABELS.pasteGameState))}
-              value={importValue}
-              onChange={(e) => {
-                setImportValue(e.target.value);
-                setImportError(false);
-                setImportSuccess(false);
-              }}
-            />
-            {importError && (
-              <p className="text-red-400 text-xs mt-1">{m(UI_LABELS.invalidGameState)}</p>
-            )}
-            {importSuccess && (
-              <p className="text-green-400 text-xs mt-1">{m(UI_LABELS.gameLoadedSuccess)}</p>
-            )}
-            <Button
-              variant="outline"
-              className="w-full mt-2"
-              onClick={handleImport}
-              disabled={!importValue.trim()}
-            >
-              {m(UI_LABELS.loadGameState)}
-            </Button>
-          </div>
-          
-          <div>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-3">{m(UI_LABELS.developerTools)}</div>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => setShowSpriteTest(true)}
-            >
-              {m(UI_LABELS.openSpriteTestView)}
-            </Button>
-            <Button variant="outline" className="w-full mt-2" onClick={() => loadExampleState('example_state.json', loadState, setActivePanel)}>
-              Load Example State
-            </Button>
-            <Button variant="outline" className="w-full mt-2" onClick={() => loadExampleState('example_state_2.json', loadState, setActivePanel)}>
-              Load Example State 2
-            </Button>
-            <Button variant="outline" className="w-full mt-2" onClick={() => loadExampleState('example_state_3.json', loadState, setActivePanel)}>
-              Load Example State 3
-            </Button>
-            <Button variant="outline" className="w-full mt-2" onClick={() => loadExampleState('example_state_4.json', loadState, setActivePanel)}>
-              Load Example State 4
-            </Button>
-            <Button variant="outline" className="w-full mt-2" onClick={() => loadExampleState('example_state_5.json', loadState, setActivePanel)}>
-              Load Example State 5
-            </Button>
-            <Button variant="outline" className="w-full mt-2" onClick={() => loadExampleState('example_state_6.json', loadState, setActivePanel)}>
-              Load Example State 6
-            </Button>
-            <Button variant="outline" className="w-full mt-2" onClick={() => loadExampleState('example_state_7.json', loadState, setActivePanel)}>
-              Load Example State 7
-            </Button>
-            <Button variant="outline" className="w-full mt-2" onClick={() => loadExampleState('example_state_8.json', loadState, setActivePanel)}>
-              Load Example State 8
-            </Button>
-            <Button variant="outline" className="w-full mt-2" onClick={() => loadExampleState('example_state_9.json', loadState, setActivePanel)}>
-              Load Example State 9
-            </Button>
-            <Button variant="outline" className="w-full mt-2" onClick={() => loadExampleState('example_state_10.json', loadState, setActivePanel)}>
-              Load Example State 10
-            </Button>
-            <Button variant="outline" className="w-full mt-2" onClick={() => loadExampleState('example_state_11.json', loadState, setActivePanel)}>
-              Load Example State 11
-            </Button>
-            <div className="mt-4 pt-4 border-t border-border">
-              <Label>{m(UI_LABELS.dayNightMode)}</Label>
-              <p className="text-muted-foreground text-xs mb-2">{m(UI_LABELS.dayNightModeDesc)}</p>
-              <div className="flex rounded-md border border-border overflow-hidden">
-                {(['auto', 'day', 'night'] as DayNightMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setDayNightMode(mode)}
-                    className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                      dayNightMode === mode
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-background hover:bg-muted text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {mode === 'auto' && m(UI_LABELS.auto)}
-                    {mode === 'day' && m(UI_LABELS.day)}
-                    {mode === 'night' && m(UI_LABELS.night)}
-                  </button>
-                ))}
-              </div>
+            <Label>{m(UI_LABELS.dayNightMode)}</Label>
+            <p className="text-muted-foreground text-xs mb-2">{m(UI_LABELS.dayNightModeDesc)}</p>
+            <div className="flex rounded-md border border-border overflow-hidden">
+              {(['auto', 'day', 'night'] as DayNightMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setDayNightMode(mode)}
+                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                    dayNightMode === mode
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-background hover:bg-muted text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {mode === 'auto' && m(UI_LABELS.auto)}
+                  {mode === 'day' && m(UI_LABELS.day)}
+                  {mode === 'night' && m(UI_LABELS.night)}
+                </button>
+              ))}
             </div>
           </div>
         </div>
       </DialogContent>
-      
-      {showSpriteTest && (
-        <SpriteTestPanel onClose={() => {
-          setShowSpriteTest(false);
-          // Query param will be cleared by useEffect above
-        }} />
-      )}
     </Dialog>
   );
 }

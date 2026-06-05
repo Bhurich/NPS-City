@@ -39,6 +39,7 @@ import {
 } from '@/lib/renderConfig';
 
 const STORAGE_KEY = 'isocity-game-state';
+const READ_ONLY_EXAMPLE_STORAGE_KEY = 'nps-city-read-only-example-state';
 const SAVED_CITY_STORAGE_KEY = 'isocity-saved-city'; // For restoring after viewing shared city
 const SAVED_CITIES_INDEX_KEY = 'isocity-saved-cities-index'; // Index of all saved cities
 const SAVED_CITY_PREFIX = 'isocity-city-'; // Prefix for individual saved city states
@@ -182,10 +183,10 @@ const toolZoneMap: Partial<Record<Tool, ZoneType>> = {
 
 // Load game state from localStorage
 // Supports both compressed (lz-string) and uncompressed (legacy) formats
-function loadGameState(): GameState | null {
+function loadGameState(storageKey: string = STORAGE_KEY): GameState | null {
   if (typeof window === 'undefined') return null;
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(storageKey);
     if (saved) {
       // Try to decompress first (new format)
       // If it fails or returns null/garbage, fall back to parsing as plain JSON (legacy format)
@@ -200,7 +201,7 @@ function loadGameState(): GameState | null {
         } else {
           // Data is corrupted - clear it and return null
           console.error('Corrupted save data detected, clearing...');
-          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(storageKey);
           return null;
         }
       }
@@ -722,7 +723,7 @@ export function GameProvider({
     
     // Load game state (unless startFresh is true - used for co-op to start with a new city)
     if (!startFresh) {
-      const saved = loadGameState();
+      const saved = readOnly ? loadGameState(READ_ONLY_EXAMPLE_STORAGE_KEY) : loadGameState();
       if (saved) {
         skipNextSaveRef.current = true; // Set skip flag BEFORE updating state
         setState(saved);
@@ -786,6 +787,12 @@ export function GameProvider({
       // Set up interval to save every 5 seconds
       // PERF: Save operation is broken into chunks internally to avoid blocking
       saveIntervalRef.current = setInterval(() => {
+        // Read-only examples are view-only and must never overwrite playable saves.
+        if (readOnlyRef.current) {
+          stateChangedRef.current = false;
+          return;
+        }
+
         // Don't save if we just loaded
         if (skipNextSaveRef.current) {
           skipNextSaveRef.current = false;

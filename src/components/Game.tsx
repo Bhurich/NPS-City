@@ -19,8 +19,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useCheatCodes } from '@/hooks/useCheatCodes';
-import { VinnieDialog } from '@/components/VinnieDialog';
 import { CommandMenu } from '@/components/ui/CommandMenu';
 import { TipToast } from '@/components/ui/TipToast';
 import { useTipSystem } from '@/hooks/useTipSystem';
@@ -210,14 +208,6 @@ export default function Game({ onExit }: { onExit?: () => void }) {
   const [showShareModal, setShowShareModal] = useState(false);
   const multiplayer = useMultiplayerOptional();
   
-  // Cheat code system
-  const {
-    triggeredCheat,
-    showVinnieDialog,
-    setShowVinnieDialog,
-    clearTriggeredCheat,
-  } = useCheatCodes();
-  
   // Tip system for helping new players
   const {
     currentTip,
@@ -375,38 +365,6 @@ export default function Game({ onExit }: { onExit?: () => void }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [state.activePanel, state.selectedTool, state.speed, selectedTile, setActivePanel, setTool, setSpeed, overlayMode, isReadOnly]);
 
-  // Handle cheat code triggers
-  useEffect(() => {
-    if (!triggeredCheat || isReadOnly) return;
-
-    switch (triggeredCheat.type) {
-      case 'konami':
-        addMoney(triggeredCheat.amount);
-        addNotification(
-          gt('Retro Cheat Activated!'),
-          gt('Your accountants are confused but not complaining. You received $50,000!'),
-          'trophy'
-        );
-        clearTriggeredCheat();
-        break;
-
-      case 'motherlode':
-        addMoney(triggeredCheat.amount);
-        addNotification(
-          gt('Motherlode!'),
-          gt('Your treasury just got a lot heavier. You received $1,000,000!'),
-          'trophy'
-        );
-        clearTriggeredCheat();
-        break;
-
-      case 'vinnie':
-        // Vinnie dialog is handled by VinnieDialog component
-        clearTriggeredCheat();
-        break;
-    }
-  }, [triggeredCheat, addMoney, addNotification, clearTriggeredCheat, gt, isReadOnly]);
-  
   // Track barge deliveries to show occasional notifications
   const bargeDeliveryCountRef = useRef(0);
   
@@ -517,8 +475,6 @@ export default function Game({ onExit }: { onExit?: () => void }) {
           {state.activePanel === 'challenge' && <NpsChallengePanel />}
           {state.activePanel === 'settings' && <SettingsPanel />}
           
-          <VinnieDialog open={showVinnieDialog} onOpenChange={setShowVinnieDialog} />
-
           <StarterGuideDialog
             open={!isReadOnly && showStarterGuide}
             onOpenChange={setShowStarterGuide}
@@ -609,7 +565,6 @@ export default function Game({ onExit }: { onExit?: () => void }) {
         {state.activePanel === 'challenge' && <NpsChallengePanel />}
         {state.activePanel === 'settings' && <SettingsPanel />}
         
-        <VinnieDialog open={showVinnieDialog} onOpenChange={setShowVinnieDialog} />
         <StarterGuideDialog
           open={!isReadOnly && showStarterGuide}
           onOpenChange={setShowStarterGuide}

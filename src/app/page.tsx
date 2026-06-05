@@ -30,6 +30,7 @@ const STORAGE_KEY = 'isocity-game-state';
 const SAVED_CITIES_INDEX_KEY = 'isocity-saved-cities-index';
 const PLAYER_PROFILE_PREFIX = 'nps-city-player-profile-';
 const READ_ONLY_VIEW_STORAGE_KEY = 'nps-city-read-only-view';
+const READ_ONLY_EXAMPLE_STORAGE_KEY = 'nps-city-read-only-example-state';
 
 // Background color to filter from sprite sheets (red)
 const BACKGROUND_COLOR = { r: 255, g: 0, b: 0 };
@@ -80,28 +81,44 @@ function shuffleArray<T>(array: T[]): T[] {
 
 // Check if there's a saved game in localStorage
 // Supports both compressed (lz-string) and uncompressed (legacy) formats
+function decodeSavedGameState(saved: string): GameState | null {
+  try {
+    let jsonString = decompressFromUTF16(saved);
+    if (!jsonString || !jsonString.startsWith('{')) {
+      jsonString = saved.startsWith('{') ? saved : '';
+    }
+    if (!jsonString) return null;
+    const parsed = JSON.parse(jsonString);
+    if (parsed?.grid && parsed?.gridSize && parsed?.stats) {
+      return parsed as GameState;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function clearLegacyReadOnlyExampleFromPlayableSave(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return;
+    const parsed = decodeSavedGameState(saved);
+    if (parsed?.cityName === 'StephCity' && (parsed.stats?.money ?? 0) >= 900000) {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  } catch {
+    // Startup should remain resilient even if a browser save is malformed.
+  }
+}
+
 function hasSavedGame(): boolean {
   if (typeof window === 'undefined') return false;
   try {
+    clearLegacyReadOnlyExampleFromPlayableSave();
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      // Try to decompress first (new format)
-      // lz-string can return garbage when given invalid input, so check for valid JSON start
-      let jsonString = decompressFromUTF16(saved);
-      
-      // Check if decompression returned valid-looking JSON
-      if (!jsonString || !jsonString.startsWith('{')) {
-        // Check if saved string itself is JSON (legacy uncompressed format)
-        if (saved.startsWith('{')) {
-          jsonString = saved;
-        } else {
-          // Data is corrupted
-          return false;
-        }
-      }
-      
-      const parsed = JSON.parse(jsonString);
-      return parsed.grid && parsed.gridSize && parsed.stats;
+      return decodeSavedGameState(saved) !== null;
     }
   } catch {
     return false;
@@ -487,6 +504,7 @@ export default function HomePage() {
   useEffect(() => {
     const checkSavedGame = () => {
       setIsChecking(false);
+      clearLegacyReadOnlyExampleFromPlayableSave();
       setSavedCities(loadSavedCities());
       setHasSaved(hasSavedGame());
       
@@ -501,8 +519,8 @@ export default function HomePage() {
       // Always show landing page - don't auto-load into game
       // User can select from saved cities or start new
     };
-    // Use requestAnimationFrame to avoid synchronous setState in effect
-    requestAnimationFrame(checkSavedGame);
+    const timer = window.setTimeout(checkSavedGame, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -714,6 +732,7 @@ export default function HomePage() {
     setStartFreshGame(false);
     setReadOnlyMode(false);
     localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
+    localStorage.removeItem(READ_ONLY_EXAMPLE_STORAGE_KEY);
     setSavedCities(loadSavedCities());
     setHasSaved(hasSavedGame());
     // Clear room code from URL
@@ -736,6 +755,7 @@ export default function HomePage() {
       if (saved) {
         localStorage.setItem(STORAGE_KEY, saved);
         localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
+        localStorage.removeItem(READ_ONLY_EXAMPLE_STORAGE_KEY);
         setReadOnlyMode(false);
         setShowGame(true);
       }
@@ -766,6 +786,7 @@ export default function HomePage() {
     setIsMultiplayer(true);
     setReadOnlyMode(false);
     localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
+    localStorage.removeItem(READ_ONLY_EXAMPLE_STORAGE_KEY);
     
     if (isHost && initialState) {
       // Host starts with the state they created - save it so GameProvider loads it
@@ -808,12 +829,15 @@ export default function HomePage() {
 
   const startPlayableGame = () => {
     localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
+    localStorage.removeItem(READ_ONLY_EXAMPLE_STORAGE_KEY);
+    clearLegacyReadOnlyExampleFromPlayableSave();
     setReadOnlyMode(false);
     setShowGame(true);
   };
 
   const openCoopSetup = () => {
     localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
+    localStorage.removeItem(READ_ONLY_EXAMPLE_STORAGE_KEY);
     setReadOnlyMode(false);
     setShowCoopModal(true);
   };
@@ -833,7 +857,7 @@ export default function HomePage() {
         speed: 0,
         selectedTool: 'select',
       }));
-      localStorage.setItem(STORAGE_KEY, compressed);
+      localStorage.setItem(READ_ONLY_EXAMPLE_STORAGE_KEY, compressed);
       localStorage.setItem(READ_ONLY_VIEW_STORAGE_KEY, 'true');
     } catch (e) {
       console.error('Failed to save example state:', e);
