@@ -1588,19 +1588,22 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
               
               // Calculate destination size. Direct NPS assets are already cropped
               // isometric objects, so size them against the whole footprint.
-              const directFootprintScale = spriteSourceInfo.variantType === 'direct'
+              const isDirectAsset = spriteSourceInfo.variantType === 'direct';
+              const directAssetRenderScale = 0.6;
+              const directFootprintScale = isDirectAsset
                 ? Math.max(1.75, Math.max(buildingSize.width, buildingSize.height) * 1.05)
                 : 1.2;
-              const destWidth = w * directFootprintScale * scaleMultiplier;
+              const destWidth = w * directFootprintScale * scaleMultiplier * (isDirectAsset ? directAssetRenderScale : 1);
               const aspectRatio = coords.sh / coords.sw;
               const destHeight = destWidth * aspectRatio;
               
-              // Calculate final position with offsets
+              // Calculate final position with offsets. Direct assets are centered on
+              // the visual middle of the building footprint only; grid occupancy is unchanged.
               const drawX = drawPosX + w / 2 - destWidth / 2 + offsets.horizontal * w;
               
               let verticalPush: number;
-              if (spriteSourceInfo.variantType === 'direct') {
-                verticalPush = h * 0.15;
+              if (isDirectAsset) {
+                verticalPush = destHeight * 0.2;
               } else if (isMultiTile) {
                 const footprintDepth = buildingSize.width + buildingSize.height - 2;
                 verticalPush = footprintDepth * h * 0.25;

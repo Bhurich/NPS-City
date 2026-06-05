@@ -33,6 +33,27 @@ const PLAYER_PROFILE_PREFIX = 'nps-city-player-profile-';
 const READ_ONLY_VIEW_STORAGE_KEY = 'nps-city-read-only-view';
 const READ_ONLY_EXAMPLE_STORAGE_KEY = 'nps-city-read-only-example-state';
 
+type DashboardCity = SavedCityMeta & {
+  playerName?: string;
+  gameState?: string;
+  isGlobal?: boolean;
+};
+
+type LeaderboardRow = {
+  city_id: string;
+  player_name: string | null;
+  city_name: string;
+  room_code: string | null;
+  money: number | string | null;
+  happiness: number | null;
+  environment: number | null;
+  esg_score: number | null;
+  power_reliability: number | null;
+  population: number | null;
+  game_state: string | null;
+  updated_at: string | null;
+};
+
 // Background color to filter from sprite sheets (red)
 const BACKGROUND_COLOR = { r: 255, g: 0, b: 0 };
 const COLOR_THRESHOLD = 155;
@@ -290,6 +311,146 @@ function normalizeSavedCities(cities: SavedCityMeta[]): SavedCityMeta[] {
   return Array.from(latestByKey.values()).sort((a, b) => b.savedAt - a.savedAt);
 }
 
+function buildCityMetaFromState(state: GameState, roomCode?: string): SavedCityMeta {
+  const normalizedRoomCode = roomCode?.toUpperCase() || state.currentRoomCode?.toUpperCase();
+  const cityId = normalizedRoomCode ? `coop-${normalizedRoomCode}` : (state.id || `city-${Date.now()}`);
+
+  return {
+    id: cityId,
+    cityName: state.cityName || 'NPS City',
+    population: state.stats.population,
+    money: state.stats.money,
+    happiness: state.stats.happiness,
+    environment: state.stats.environment,
+    health: state.stats.health,
+    education: state.stats.education,
+    safety: state.stats.safety,
+    communityTrust: state.stats.communityTrust,
+    esgScore: state.stats.esgScore,
+    powerReliability: state.stats.powerReliability,
+    blackoutRisk: state.stats.blackoutRisk,
+    powerBalance: state.stats.powerBalance,
+    income: state.stats.income,
+    expenses: state.stats.expenses,
+    year: state.year,
+    month: state.month,
+    gridSize: state.gridSize,
+    savedAt: Date.now(),
+    roomCode: normalizedRoomCode,
+  };
+}
+
+function leaderboardRowToCity(row: LeaderboardRow): DashboardCity {
+  const savedAt = row.updated_at ? new Date(row.updated_at).getTime() : Date.now();
+  const roomCode = row.room_code?.toUpperCase() || undefined;
+  const cityId = row.city_id || (roomCode ? `coop-${roomCode}` : `global-${savedAt}`);
+
+  return {
+    id: roomCode ? `coop-${roomCode}` : cityId,
+    cityName: row.city_name || 'NPS City',
+    population: Number(row.population ?? 0),
+    money: Number(row.money ?? 0),
+    happiness: Number(row.happiness ?? 0),
+    environment: Number(row.environment ?? 0),
+    health: 0,
+    education: 0,
+    safety: 0,
+    communityTrust: 0,
+    esgScore: Number(row.esg_score ?? 0),
+    powerReliability: Number(row.power_reliability ?? 0),
+    blackoutRisk: 0,
+    powerBalance: 0,
+    income: 0,
+    expenses: 0,
+    year: 2026,
+    month: 1,
+    gridSize: 0,
+    savedAt,
+    roomCode,
+    playerName: row.player_name || undefined,
+    gameState: row.game_state || undefined,
+    isGlobal: true,
+  };
+}
+
+function mergeDashboardCities(localCities: SavedCityMeta[], globalCities: DashboardCity[]): DashboardCity[] {
+  const byKey = new Map<string, DashboardCity>();
+  const addCity = (city: DashboardCity) => {
+    const key = city.roomCode ? `room:${city.roomCode.toUpperCase()}` : `id:${city.id}`;
+    const existing = byKey.get(key);
+    if (!existing || city.savedAt >= existing.savedAt || city.isGlobal) {
+      byKey.set(key, { ...existing, ...city });
+    }
+  };
+
+  localCities.forEach((city) => addCity(city));
+  globalCities.forEach(addCity);
+
+  return Array.from(byKey.values()).sort((a, b) => b.savedAt - a.savedAt);
+}
+
+async function loadGlobalDashboardCities(): Promise<DashboardCity[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('city_leaderboard')
+      .select('city_id, player_name, city_name, room_code, money, happiness, environment, esg_score, power_reliability, population, game_state, updated_at')
+      .eq('is_public', true)
+      .order('money', { ascending: false })
+      .limit(100);
+
+    if (error) {
+      console.warn('[Dashboard] city_leaderboard is not ready:', error.message);
+      return [];
+    }
+
+    return (data as LeaderboardRow[] | null)?.map(leaderboardRowToCity) ?? [];
+  } catch (e) {
+    console.warn('[Dashboard] Failed to load global leaderboard:', e);
+    return [];
+  }
+}
+
+async function publishCityToLeaderboard(
+  state: GameState,
+  user: User | null,
+  profile: PlayerProfile | null,
+  roomCode?: string
+): Promise<void> {
+  if (!supabase || !user) return;
+
+  try {
+    const cityMeta = buildCityMetaFromState(state, roomCode);
+    const snapshotState = cityMeta.roomCode
+      ? { ...state, currentRoomCode: cityMeta.roomCode }
+      : { ...state, id: cityMeta.id };
+
+    const { error } = await supabase
+      .from('city_leaderboard')
+      .upsert({
+        user_id: user.id,
+        city_id: cityMeta.id,
+        player_name: profile?.displayName || getDefaultPlayerName(user),
+        city_name: cityMeta.cityName,
+        room_code: cityMeta.roomCode ?? null,
+        money: Math.round(cityMeta.money),
+        happiness: Math.round(cityMeta.happiness ?? 0),
+        environment: Math.round(cityMeta.environment ?? 0),
+        esg_score: Math.round(cityMeta.esgScore ?? 0),
+        power_reliability: Math.round(cityMeta.powerReliability ?? 0),
+        population: Math.round(cityMeta.population),
+        game_state: compressToUTF16(JSON.stringify(snapshotState)),
+        is_public: true,
+      }, { onConflict: 'user_id,city_id' });
+
+    if (error) {
+      console.warn('[Dashboard] Failed to publish city:', error.message);
+    }
+  } catch (e) {
+    console.warn('[Dashboard] Failed to publish city:', e);
+  }
+}
+
 // Sprite Gallery component that renders sprites using canvas (like SpriteTestPanel)
 function SpriteGallery({ count = 16, cols = 4, cellSize = 120 }: { count?: number; cols?: number; cellSize?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -464,8 +625,8 @@ function CityDashboard({
   onView,
   compact = false,
 }: {
-  cities: SavedCityMeta[];
-  onView: (city: SavedCityMeta) => void;
+  cities: DashboardCity[];
+  onView: (city: DashboardCity) => void;
   compact?: boolean;
 }) {
   const rankedByMoney = [...cities].sort((a, b) => b.money - a.money);
@@ -535,6 +696,9 @@ function CityDashboard({
             >
               <div className="min-w-0">
                 <div className="truncate font-medium text-white/90">{city.cityName}</div>
+                {city.playerName && (
+                  <div className="mt-0.5 truncate text-xs text-white/35">{city.playerName}</div>
+                )}
                 <div className="mt-1 text-xs text-white/40 sm:hidden">
                   {formatCurrency(city.money)} · สุข {percentValue(city.happiness)}% · สิ่งแวดล้อม {percentValue(city.environment)}% · ESG {percentValue(city.esgScore)}%
                 </div>
@@ -698,7 +862,8 @@ function AuthControls({
 export default function HomePage() {
   const [showGame, setShowGame] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
-  const [savedCities, setSavedCities] = useState<SavedCityMeta[]>([]);
+  const [savedCities, setSavedCities] = useState<DashboardCity[]>([]);
+  const [globalCities, setGlobalCities] = useState<DashboardCity[]>([]);
   const [hasSaved, setHasSaved] = useState(false);
   const [showCoopModal, setShowCoopModal] = useState(false);
   const [isMultiplayer, setIsMultiplayer] = useState(false);
@@ -717,12 +882,20 @@ export default function HomePage() {
   const { isMobileDevice, isSmallScreen } = useMobile();
   const isMobile = isMobileDevice || isSmallScreen;
 
+  const refreshDashboardCities = async () => {
+    const localCities = loadSavedCities();
+    const remoteCities = await loadGlobalDashboardCities();
+    setGlobalCities(remoteCities);
+    setSavedCities(mergeDashboardCities(localCities, remoteCities));
+    setHasSaved(hasSavedGame());
+  };
+
   // Check for saved game and room code in URL after mount
   useEffect(() => {
     const checkSavedGame = () => {
       setIsChecking(false);
       clearLegacyReadOnlyExampleFromPlayableSave();
-      setSavedCities(loadSavedCities());
+      setSavedCities(mergeDashboardCities(loadSavedCities(), globalCities));
       setHasSaved(hasSavedGame());
       
       // Check for room code in URL (legacy format) - redirect to new format
@@ -738,7 +911,15 @@ export default function HomePage() {
     };
     const timer = window.setTimeout(checkSavedGame, 0);
     return () => window.clearTimeout(timer);
+  }, [globalCities]);
+
+  useEffect(() => {
+    refreshDashboardCities();
   }, []);
+
+  useEffect(() => {
+    refreshDashboardCities();
+  }, [authUser?.id]);
 
   useEffect(() => {
     if (!supabase) {
@@ -943,15 +1124,25 @@ export default function HomePage() {
   );
 
   // Handle exit from game - refresh saved cities list
-  const handleExitGame = () => {
+  const handleExitGame = async () => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      const latestState = saved ? decodeSavedGameState(saved) : null;
+      if (latestState) {
+        saveCityToIndex(latestState, latestState.currentRoomCode);
+        await publishCityToLeaderboard(latestState, authUser, playerProfile, latestState.currentRoomCode);
+      }
+    } catch (e) {
+      console.warn('[Dashboard] Failed to sync city on exit:', e);
+    }
+
     setShowGame(false);
     setIsMultiplayer(false);
     setStartFreshGame(false);
     setReadOnlyMode(false);
     localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
     localStorage.removeItem(READ_ONLY_EXAMPLE_STORAGE_KEY);
-    setSavedCities(loadSavedCities());
-    setHasSaved(hasSavedGame());
+    await refreshDashboardCities();
     // Clear room code from URL
     window.history.replaceState({}, '', '/');
   };
@@ -1001,7 +1192,7 @@ export default function HomePage() {
     }
   };
 
-  const viewSavedCity = async (city: SavedCityMeta) => {
+  const viewSavedCity = async (city: DashboardCity) => {
     try {
       const saved = localStorage.getItem(SAVED_CITY_PREFIX + city.id);
       const localState = saved ? decodeSavedGameState(saved) : null;
@@ -1015,6 +1206,18 @@ export default function HomePage() {
       }
     } catch (e) {
       console.error('Failed to view local city snapshot:', e);
+    }
+
+    if (city.gameState) {
+      const globalState = decodeSavedGameState(city.gameState);
+      if (globalState) {
+        openReadOnlyState({
+          ...globalState,
+          cityName: globalState.cityName || city.cityName,
+          currentRoomCode: city.roomCode?.toUpperCase() || globalState.currentRoomCode,
+        });
+        return;
+      }
     }
 
     if (city.roomCode) {
@@ -1063,6 +1266,7 @@ export default function HomePage() {
         // Also save to saved cities index so it appears on homepage
         if (roomCode) {
           saveCityToIndex(stateWithRoom, roomCode);
+          void publishCityToLeaderboard(stateWithRoom, authUser, playerProfile, roomCode);
         }
       } catch (e) {
         console.error('Failed to save co-op state:', e);
@@ -1081,6 +1285,7 @@ export default function HomePage() {
         // Also save to saved cities index so it appears on homepage
         if (roomCode) {
           saveCityToIndex(stateWithRoom, roomCode);
+          void publishCityToLeaderboard(stateWithRoom, authUser, playerProfile, roomCode);
         }
       } catch (e) {
         console.error('Failed to save co-op state:', e);
