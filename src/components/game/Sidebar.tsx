@@ -19,6 +19,7 @@ const CATEGORY_LABELS: Record<string, unknown> = {
   sports: msg('Sports'),
   waterfront: msg('Waterfront'),
   community: msg('Community'),
+  npsEnergy: msg('NPS Energy'),
   utilities: msg('Utilities'),
   special: msg('Special'),
 };
@@ -83,6 +84,13 @@ const THAI_TOOL_NAMES: Partial<Record<Tool, string>> = {
   tennis: 'สนามเทนนิส',
   power_plant: 'โรงไฟฟ้า',
   water_tower: 'หอเก็บน้ำ',
+  biomass_power_plant: 'โรงไฟฟ้าชีวมวล',
+  solar_farm: 'โซลาร์ฟาร์ม',
+  floating_solar: 'โซลาร์ลอยน้ำ',
+  battery_storage: 'แบตเตอรี่กักเก็บไฟ',
+  wood_chipping_plant: 'โรงสับไม้',
+  biomass_plantation: 'แปลงไม้พลังงาน',
+  harvested_plantation: 'แปลงไม้หลังตัด',
   subway_station: 'สถานีรถไฟใต้ดิน',
   rail_station: 'สถานีรถไฟ',
   stadium: 'สนามกีฬา',
@@ -667,6 +675,11 @@ export const Sidebar = React.memo(function Sidebar({ onExit }: { onExit?: () => 
       key: 'community', 
       label: CATEGORY_LABELS.community, 
       tools: ['community_center', 'animal_pens_farm', 'office_building_small'] as Tool[]
+    },
+    { 
+      key: 'npsEnergy', 
+      label: CATEGORY_LABELS.npsEnergy, 
+      tools: ['biomass_power_plant', 'solar_farm', 'floating_solar', 'battery_storage', 'wood_chipping_plant', 'biomass_plantation', 'harvested_plantation'] as Tool[]
     },
     { 
       key: 'utilities', 

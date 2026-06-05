@@ -20,7 +20,7 @@ export interface SpriteSourceResult {
   /** Path to the sprite sheet to use */
   source: string;
   /** Type of variant being used */
-  variantType: 'normal' | 'construction' | 'abandoned' | 'parks' | 'parksConstruction' | 'dense' | 'modern' | 'farm' | 'shop' | 'station' | 'services' | 'infrastructure' | 'mansion';
+  variantType: 'normal' | 'construction' | 'abandoned' | 'parks' | 'parksConstruction' | 'dense' | 'modern' | 'farm' | 'shop' | 'station' | 'services' | 'infrastructure' | 'mansion' | 'direct';
   /** Variant coordinates if using a variant sheet (row, col) */
   variant: { row: number; col: number } | null;
 }
@@ -85,6 +85,14 @@ export function selectSpriteSource(
   const constructionProgress = building.constructionProgress ?? 100;
   const isConstructionPhase = isUnderConstruction && constructionProgress >= 40;
   const isAbandoned = building.abandoned === true;
+
+  if (!isAbandoned && activePack.directAssetSrc?.[buildingType]) {
+    return {
+      source: activePack.directAssetSrc[buildingType],
+      variantType: 'direct',
+      variant: null,
+    };
+  }
   
   // Check if this is a parks building
   const isParksBuilding = !!(activePack.parksBuildings && activePack.parksBuildings[buildingType]);
@@ -285,6 +293,15 @@ export function calculateSpriteCoords(
   activePack: SpritePack = getActiveSpritePack()
 ): SpriteCoords | null {
   const { variantType, variant } = source;
+
+  if (variantType === 'direct') {
+    return {
+      sx: 0,
+      sy: 0,
+      sw: sheetWidth,
+      sh: sheetHeight,
+    };
+  }
   
   // Parks buildings (including parks construction)
   if ((variantType === 'parks' || variantType === 'parksConstruction') && variant) {
@@ -549,6 +566,10 @@ export function calculateSpriteScale(
   if (buildingType in buildingScales) {
     scaleMultiplier *= buildingScales[buildingType];
   }
+
+  if (variantType === 'direct' && activePack.directAssetScales && buildingType in activePack.directAssetScales) {
+    scaleMultiplier *= activePack.directAssetScales[buildingType];
+  }
   
   // Variant-specific scale adjustments
   if (variantType === 'dense') {
@@ -645,7 +666,9 @@ export function calculateSpriteOffsets(
   let horizontalOffset = 0;
   
   // Determine vertical offset based on priority order
-  if (isConstructionPhase && isParksBuilding && activePack.parksConstructionVerticalOffsets && 
+  if (variantType === 'direct' && activePack.directAssetVerticalOffsets && buildingType in activePack.directAssetVerticalOffsets) {
+    verticalOffset = activePack.directAssetVerticalOffsets[buildingType];
+  } else if (isConstructionPhase && isParksBuilding && activePack.parksConstructionVerticalOffsets && 
       buildingType in activePack.parksConstructionVerticalOffsets) {
     verticalOffset = activePack.parksConstructionVerticalOffsets[buildingType];
   } else if (isConstructionPhase && activePack.constructionVerticalOffsets && 
@@ -721,6 +744,10 @@ export function calculateSpriteOffsets(
   const spriteKey = BUILDING_TO_SPRITE[buildingType];
   if (spriteKey && SPRITE_HORIZONTAL_OFFSETS[spriteKey]) {
     horizontalOffset = SPRITE_HORIZONTAL_OFFSETS[spriteKey];
+  }
+
+  if (variantType === 'direct' && activePack.directAssetHorizontalOffsets && buildingType in activePack.directAssetHorizontalOffsets) {
+    horizontalOffset = activePack.directAssetHorizontalOffsets[buildingType];
   }
   
   if (isParksBuilding && activePack.parksHorizontalOffsets && 

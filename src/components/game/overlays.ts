@@ -89,6 +89,10 @@ export const OVERLAY_CONFIG: Record<OverlayMode, OverlayConfig> = {
 /** Map of building tools to their corresponding overlay mode */
 export const TOOL_TO_OVERLAY_MAP: Record<string, OverlayMode> = {
   power_plant: 'power',
+  biomass_power_plant: 'power',
+  solar_farm: 'power',
+  floating_solar: 'power',
+  battery_storage: 'power',
   water_tower: 'water',
   fire_station: 'fire',
   police_station: 'police',
@@ -210,7 +214,7 @@ export const OVERLAY_MODES: OverlayMode[] = [
 /** Map overlay modes to their corresponding service building types */
 export const OVERLAY_TO_BUILDING_TYPES: Record<OverlayMode, string[]> = {
   none: [],
-  power: ['power_plant'],
+  power: ['power_plant', 'biomass_power_plant', 'solar_farm', 'floating_solar', 'battery_storage'],
   water: ['water_tower'],
   fire: ['fire_station'],
   police: ['police_station'],

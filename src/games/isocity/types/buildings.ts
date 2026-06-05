@@ -15,6 +15,8 @@ export type BuildingType =
   | 'park' | 'park_large' | 'tennis'
   // Utilities
   | 'power_plant' | 'water_tower'
+  | 'biomass_power_plant' | 'solar_farm' | 'floating_solar' | 'battery_storage'
+  | 'wood_chipping_plant' | 'biomass_plantation' | 'harvested_plantation'
   // Transportation
   | 'subway_station' | 'rail_station'
   // Special
@@ -91,6 +93,13 @@ export const BUILDING_STATS: Record<BuildingType, { maxPop: number; maxJobs: num
   tennis: { maxPop: 0, maxJobs: 1, pollution: -5, landValue: 15 },
   power_plant: { maxPop: 0, maxJobs: 30, pollution: 30, landValue: -20 },
   water_tower: { maxPop: 0, maxJobs: 5, pollution: 0, landValue: 5 },
+  biomass_power_plant: { maxPop: 0, maxJobs: 75, pollution: 20, landValue: -8 },
+  solar_farm: { maxPop: 0, maxJobs: 8, pollution: -10, landValue: 8 },
+  floating_solar: { maxPop: 0, maxJobs: 10, pollution: -8, landValue: 12 },
+  battery_storage: { maxPop: 0, maxJobs: 6, pollution: 0, landValue: 8 },
+  wood_chipping_plant: { maxPop: 0, maxJobs: 55, pollution: 20, landValue: -10 },
+  biomass_plantation: { maxPop: 0, maxJobs: 18, pollution: -18, landValue: 20 },
+  harvested_plantation: { maxPop: 0, maxJobs: 10, pollution: 8, landValue: 5 },
   stadium: { maxPop: 0, maxJobs: 50, pollution: 5, landValue: 40 },
   museum: { maxPop: 0, maxJobs: 40, pollution: 0, landValue: 45 },
   airport: { maxPop: 0, maxJobs: 200, pollution: 20, landValue: 50 },

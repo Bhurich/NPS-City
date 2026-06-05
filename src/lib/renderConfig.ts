@@ -172,6 +172,11 @@ export interface SpritePack {
   mansionsHorizontalOffsets?: Record<string, number>;
   // Per-building-type scale adjustments for MANSIONS sprite sheet buildings
   mansionsScales?: Record<string, number>;
+  // Direct standalone asset files for additive custom buildings that are not part of a sheet.
+  directAssetSrc?: Record<string, string>;
+  directAssetScales?: Record<string, number>;
+  directAssetVerticalOffsets?: Record<string, number>;
+  directAssetHorizontalOffsets?: Record<string, number>;
   // Maps building types to sprite keys in spriteOrder
   buildingToSprite: Record<string, string>;
   // Optional global scale multiplier for all sprites in this pack
@@ -667,6 +672,30 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
   mansionsScales: {
     mansion: 0.90, // Same as modern apartment_high scale
   },
+  directAssetSrc: {
+    biomass_power_plant: '/assets/nps/biomass-power-plant-2x2-game-asset-transparent.png',
+    solar_farm: '/assets/nps/solar-floating-game-asset-transparent.png',
+    floating_solar: '/assets/nps/solar-floating-game-asset-transparent.png',
+    wood_chipping_plant: '/assets/nps/wood-chipping-facility-game-asset-transparent.png',
+    biomass_plantation: '/assets/nps/eucalyptus-biomass-plantation-game-asset-transparent.png',
+    harvested_plantation: '/assets/nps/harvested-eucalyptus-field-game-asset-transparent.png',
+  },
+  directAssetScales: {
+    biomass_power_plant: 0.9,
+    solar_farm: 0.72,
+    floating_solar: 0.76,
+    wood_chipping_plant: 0.82,
+    biomass_plantation: 0.72,
+    harvested_plantation: 0.72,
+  },
+  directAssetVerticalOffsets: {
+    biomass_power_plant: -0.15,
+    solar_farm: 0.06,
+    floating_solar: 0.08,
+    wood_chipping_plant: 0,
+    biomass_plantation: 0.08,
+    harvested_plantation: 0.08,
+  },
   buildingToSprite: {
     house_small: 'house_small',
     house_medium: 'house_medium',
@@ -692,6 +721,13 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
     tennis: 'tennis',
     power_plant: 'power_plant',
     water_tower: 'water_tower',
+    biomass_power_plant: 'power_plant',
+    solar_farm: 'park_large',
+    floating_solar: 'water',
+    battery_storage: 'warehouse',
+    wood_chipping_plant: 'warehouse',
+    biomass_plantation: 'park_large',
+    harvested_plantation: 'industrial',
     stadium: 'stadium',
     museum: 'museum',
     airport: 'airport',

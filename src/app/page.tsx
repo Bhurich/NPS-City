@@ -166,6 +166,11 @@ function saveCityToIndex(state: GameState, roomCode?: string): void {
       health: state.stats.health,
       education: state.stats.education,
       safety: state.stats.safety,
+      communityTrust: state.stats.communityTrust,
+      esgScore: state.stats.esgScore,
+      powerReliability: state.stats.powerReliability,
+      blackoutRisk: state.stats.blackoutRisk,
+      powerBalance: state.stats.powerBalance,
       income: state.stats.income,
       expenses: state.stats.expenses,
       year: state.year,
@@ -225,14 +230,22 @@ function normalizeSavedCities(cities: SavedCityMeta[]): SavedCityMeta[] {
     const shouldUseLocalName =
       duplicateLocalCity &&
       ['NPS City', 'Co-op City', 'เมืองของทีม'].includes(city.cityName);
+    const cityWithMetricFallbacks: SavedCityMeta = {
+      ...city,
+      communityTrust: city.communityTrust ?? city.happiness ?? 0,
+      esgScore: city.esgScore ?? city.environment ?? 0,
+      powerReliability: city.powerReliability ?? 0,
+      blackoutRisk: city.blackoutRisk ?? 0,
+      powerBalance: city.powerBalance ?? 0,
+    };
     const normalizedCity = roomCode
       ? {
-          ...city,
+          ...cityWithMetricFallbacks,
           id: `coop-${roomCode}`,
           cityName: shouldUseLocalName ? duplicateLocalCity.cityName : city.cityName,
           roomCode,
         }
-      : city;
+      : cityWithMetricFallbacks;
     const existing = latestByKey.get(key);
     if (!existing || normalizedCity.savedAt > existing.savedAt) {
       latestByKey.set(key, normalizedCity);
@@ -422,10 +435,15 @@ function CityDashboard({
 }) {
   const rankedByMoney = [...cities].sort((a, b) => b.money - a.money);
   const rankedByHappiness = [...cities].sort((a, b) => percentValue(b.happiness) - percentValue(a.happiness));
+  const rankedByEnvironment = [...cities].sort((a, b) => percentValue(b.environment) - percentValue(a.environment));
   const bestMoney = rankedByMoney[0];
   const bestHappiness = rankedByHappiness[0];
+  const bestEnvironment = rankedByEnvironment[0];
   const avgEnvironment = cities.length
     ? Math.round(cities.reduce((sum, city) => sum + percentValue(city.environment), 0) / cities.length)
+    : 0;
+  const avgEsg = cities.length
+    ? Math.round(cities.reduce((sum, city) => sum + percentValue(city.esgScore), 0) / cities.length)
     : 0;
 
   return (
@@ -440,7 +458,7 @@ function CityDashboard({
         </div>
       </div>
 
-      <div className={`mt-4 grid gap-3 ${compact ? 'grid-cols-1' : 'sm:grid-cols-3'}`}>
+      <div className={`mt-4 grid gap-3 ${compact ? 'grid-cols-1' : 'sm:grid-cols-4'}`}>
         <div className="rounded-[24px] border border-white/10 bg-white/[0.06] p-3">
           <div className="text-xs text-white/45">เงินสูงสุด</div>
           <div className="mt-1 text-xl font-semibold text-emerald-300">{bestMoney ? formatCurrency(bestMoney.money) : '-'}</div>
@@ -452,18 +470,25 @@ function CityDashboard({
           <div className="mt-1 truncate text-xs text-white/50">{bestHappiness?.cityName || '-'}</div>
         </div>
         <div className="rounded-[24px] border border-white/10 bg-white/[0.06] p-3">
+          <div className="text-xs text-white/45">สิ่งแวดล้อมสูงสุด</div>
+          <div className="mt-1 text-xl font-semibold text-sky-200">{bestEnvironment ? `${percentValue(bestEnvironment.environment)}%` : '-'}</div>
+          <div className="mt-1 truncate text-xs text-white/50">{bestEnvironment?.cityName || '-'}</div>
+        </div>
+        <div className="rounded-[24px] border border-white/10 bg-white/[0.06] p-3">
           <div className="text-xs text-white/45">สิ่งแวดล้อมเฉลี่ย</div>
           <div className="mt-1 text-xl font-semibold text-sky-200">{avgEnvironment}%</div>
-          <div className="mt-1 text-xs text-white/50">ใช้ดูสมดุลเมืองโดยรวม</div>
+          <div className="mt-1 text-xs text-white/50">ESG เฉลี่ย {avgEsg}%</div>
         </div>
       </div>
 
       <div className="mt-4 overflow-hidden rounded-[24px] border border-white/10">
-        <div className="grid grid-cols-[1fr_auto] gap-2 bg-white/[0.06] px-3 py-2 text-xs uppercase tracking-wide text-white/45 sm:grid-cols-[1.3fr_.8fr_.7fr_.7fr_.7fr_auto]">
+        <div className="grid grid-cols-[1fr_auto] gap-2 bg-white/[0.06] px-3 py-2 text-xs uppercase tracking-wide text-white/45 sm:grid-cols-[1.2fr_.7fr_.55fr_.55fr_.55fr_.55fr_.55fr_auto]">
           <span>เมือง</span>
           <span className="hidden sm:block">เงิน</span>
           <span className="hidden sm:block">สุข</span>
           <span className="hidden sm:block">สิ่งแวดล้อม</span>
+          <span className="hidden sm:block">ESG</span>
+          <span className="hidden sm:block">ไฟฟ้า</span>
           <span className="hidden sm:block">รหัส</span>
           <span>ดู</span>
         </div>
@@ -471,17 +496,19 @@ function CityDashboard({
           {rankedByMoney.map((city) => (
             <div
               key={`${city.id}-${city.roomCode || 'local'}`}
-              className="grid grid-cols-[1fr_auto] items-center gap-2 border-t border-white/10 px-3 py-3 text-sm sm:grid-cols-[1.3fr_.8fr_.7fr_.7fr_.7fr_auto]"
+              className="grid grid-cols-[1fr_auto] items-center gap-2 border-t border-white/10 px-3 py-3 text-sm sm:grid-cols-[1.2fr_.7fr_.55fr_.55fr_.55fr_.55fr_.55fr_auto]"
             >
               <div className="min-w-0">
                 <div className="truncate font-medium text-white/90">{city.cityName}</div>
                 <div className="mt-1 text-xs text-white/40 sm:hidden">
-                  {formatCurrency(city.money)} · สุข {percentValue(city.happiness)}% · สิ่งแวดล้อม {percentValue(city.environment)}%
+                  {formatCurrency(city.money)} · สุข {percentValue(city.happiness)}% · สิ่งแวดล้อม {percentValue(city.environment)}% · ESG {percentValue(city.esgScore)}%
                 </div>
               </div>
               <div className="hidden text-emerald-300 sm:block">{formatCurrency(city.money)}</div>
               <div className="hidden text-amber-200 sm:block">{percentValue(city.happiness)}%</div>
               <div className="hidden text-sky-200 sm:block">{percentValue(city.environment)}%</div>
+              <div className="hidden text-teal-200 sm:block">{percentValue(city.esgScore)}%</div>
+              <div className="hidden text-cyan-200 sm:block">{percentValue(city.powerReliability)}%</div>
               <div className="hidden font-mono text-blue-300/80 sm:block">{city.roomCode || '-'}</div>
               <Button
                 type="button"

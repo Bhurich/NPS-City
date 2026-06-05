@@ -15,6 +15,8 @@ export type Tool =
   | 'zone_water' | 'zone_land'
   | 'police_station' | 'fire_station' | 'hospital' | 'school' | 'university'
   | 'park' | 'park_large' | 'tennis' | 'power_plant' | 'water_tower'
+  | 'biomass_power_plant' | 'solar_farm' | 'floating_solar' | 'battery_storage'
+  | 'wood_chipping_plant' | 'biomass_plantation' | 'harvested_plantation'
   | 'subway_station' | 'rail_station' | 'stadium' | 'museum' | 'airport'
   | 'space_program' | 'city_hall' | 'amusement_park'
   | 'basketball_courts' | 'playground_small' | 'playground_large'
@@ -57,6 +59,13 @@ export const TOOL_INFO: Record<Tool, ToolInfo> = {
   tennis: { name: msg('Tennis Court'), cost: 60000, description: msg('Recreation facility'), size: 1 },
   power_plant: { name: msg('Power Plant'), cost: 180000, description: msg('Generate electricity (2x2)'), size: 2 },
   water_tower: { name: msg('Water Tower'), cost: 120000, description: msg('Provide water'), size: 1 },
+  biomass_power_plant: { name: msg('Biomass Power Plant'), cost: 320000, description: msg('Generate reliable renewable power from biomass (2x2)'), size: 2 },
+  solar_farm: { name: msg('Solar Farm'), cost: 140000, description: msg('Generate daytime solar power (2x2)'), size: 2 },
+  floating_solar: { name: msg('Floating Solar'), cost: 180000, description: msg('Solar panels for water areas (2x2, place on water)'), size: 2 },
+  battery_storage: { name: msg('Battery Storage'), cost: 120000, description: msg('Store surplus power and reduce blackout risk'), size: 1 },
+  wood_chipping_plant: { name: msg('Wood Chipping Plant'), cost: 160000, description: msg('Prepare biomass fuel and improve fuel quality (2x2)'), size: 2 },
+  biomass_plantation: { name: msg('Biomass Plantation'), cost: 65000, description: msg('Grow biomass fuel and improve ESG score (2x2)'), size: 2 },
+  harvested_plantation: { name: msg('Harvested Plantation'), cost: 45000, description: msg('Biomass source with quick fuel stock (2x2)'), size: 2 },
   subway_station: { name: msg('Subway Station'), cost: 70000, description: msg('Access to subway network'), size: 1 },
   rail_station: { name: msg('Rail Station'), cost: 80000, description: msg('Passenger and freight station'), size: 2 },
   stadium: { name: msg('Stadium'), cost: 240000, description: msg('Boosts commercial demand (3x3)'), size: 3 },
@@ -187,6 +196,11 @@ export interface SavedCityMeta {
   health?: number;
   education?: number;
   safety?: number;
+  communityTrust?: number;
+  esgScore?: number;
+  powerReliability?: number;
+  blackoutRisk?: number;
+  powerBalance?: number;
   income?: number;
   expenses?: number;
   year: number;

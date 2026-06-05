@@ -31,6 +31,11 @@ import {
   NPS_MISSIONS,
   NPS_STARTING_MONEY,
 } from '@/lib/npsChallenge';
+import {
+  calculateNpsOperationalMetrics,
+  FLOATING_SOLAR_BUILDINGS,
+  POWER_SERVICE_BUILDINGS,
+} from '@/lib/buildingGameplay';
 import { generateCityName, generateWaterName } from './names';
 import { isMobile } from 'react-device-detect';
 
@@ -82,7 +87,12 @@ const GREEN_POLLUTION_REDUCERS = new Set<BuildingType>([
   'park_gate',
   'campground',
   'mountain_trailhead',
+  'solar_farm',
+  'floating_solar',
+  'biomass_plantation',
 ]);
+
+const clampNumber = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 function getPollutionCleanupProfile(buildingType: BuildingType): { radius: number; strength: number } | null {
   if (!GREEN_POLLUTION_REDUCERS.has(buildingType)) return null;
@@ -1122,6 +1132,35 @@ function createInitialStats(): Stats {
     education: 50,
     safety: 50,
     environment: 75,
+    communityTrust: 65,
+    esgScore: 55,
+    totalPowerDemand: 0,
+    totalPowerSupply: 0,
+    powerBalance: 0,
+    powerReliability: 80,
+    blackoutRisk: 0,
+    batteryCapacity: 0,
+    batteryStored: 0,
+    biomassStock: 80,
+    biomassConsumptionRate: 0,
+    fuelQuality: 80,
+    fuelMoisture: 30,
+    boilerEfficiency: 88,
+    steamPressure: 80,
+    turbineCondition: 92,
+    generatorCondition: 93,
+    machineAvailability: 95,
+    maintenanceCost: 0,
+    sparePartsStock: 80,
+    dustLevel: 0,
+    smokeLevel: 0,
+    odorLevel: 0,
+    wastewaterLoad: 0,
+    ashStock: 0,
+    waterLevel: 80,
+    waterQuality: 80,
+    waterEcologyScore: 82,
+    logisticsEfficiency: 50,
     demand: {
       residential: 50,
       commercial: 30,
@@ -1316,13 +1355,17 @@ export const SERVICE_CONFIG = {
   school: withRange(11, { type: 'education' as const }),
   university: withRange(19, { type: 'education' as const }),
   power_plant: withRange(15, {}),
+  biomass_power_plant: withRange(18, {}),
+  solar_farm: withRange(10, {}),
+  floating_solar: withRange(10, {}),
+  battery_storage: withRange(10, {}),
   water_tower: withRange(12, {}),
 } as const;
 
 // Building types that provide services
 export const SERVICE_BUILDING_TYPES = new Set([
   'police_station', 'fire_station', 'hospital', 'school', 'university',
-  'power_plant', 'water_tower'
+  'power_plant', 'biomass_power_plant', 'solar_farm', 'floating_solar', 'battery_storage', 'water_tower'
 ]);
 
 // Service building upgrade constants
@@ -1379,7 +1422,7 @@ function calculateServiceCoverage(grid: Tile[][], size: number): ServiceCoverage
     const maxX = Math.min(size - 1, x + range);
     
     // Handle power and water (boolean coverage)
-    if (type === 'power_plant') {
+    if (POWER_SERVICE_BUILDINGS.has(type)) {
       for (let ny = minY; ny <= maxY; ny++) {
         for (let nx = minX; nx <= maxX; nx++) {
           const dx = nx - x;
@@ -1836,7 +1879,7 @@ function evolveBuilding(grid: Tile[][], x: number, y: number, services: ServiceC
 
 // Calculate city stats
 // effectiveTaxRate is the lagged tax rate used for demand calculations
-function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: number, effectiveTaxRate: number, services: ServiceCoverage): Stats {
+function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: number, effectiveTaxRate: number, services: ServiceCoverage, hour: number = 12): Stats {
   let population = 0;
   let jobs = 0;
   let totalPollution = 0;
@@ -1979,7 +2022,7 @@ function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: n
   // so one developed town should create visible cashflow within a few minutes.
   const zoneIncome = developedResidential * 4_000 + developedCommercial * 9_000 + developedIndustrial * 16_000;
   const peopleIncome = population * 180 + jobs * 260;
-  const income = Math.floor((zoneIncome + peopleIncome) * (taxRate / 9));
+  let income = Math.floor((zoneIncome + peopleIncome) * (taxRate / 9));
   
   let expenses = 0;
   expenses += Math.floor(budget.police.cost * budget.police.funding / 100);
@@ -1991,29 +2034,43 @@ function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: n
   expenses += Math.floor(budget.power.cost * budget.power.funding / 100);
   expenses += Math.floor(budget.water.cost * budget.water.funding / 100);
 
+  const npsMetrics = calculateNpsOperationalMetrics(grid, hour);
+  income += npsMetrics.incomeBonus;
+  expenses += npsMetrics.maintenanceCost;
+  if (npsMetrics.blackoutRisk > 0) {
+    income = Math.floor(income * (1 - Math.min(0.35, npsMetrics.blackoutRisk / 260)));
+  }
+
   // Calculate ratings
   const avgPoliceCoverage = calculateAverageCoverage(services.police);
   const avgFireCoverage = calculateAverageCoverage(services.fire);
   const avgHealthCoverage = calculateAverageCoverage(services.health);
   const avgEducationCoverage = calculateAverageCoverage(services.education);
 
-  const safety = Math.min(100, avgPoliceCoverage * 0.7 + avgFireCoverage * 0.3);
-  const health = Math.min(100, avgHealthCoverage * 0.8 + (100 - totalPollution / (size * size)) * 0.2);
-  const education = Math.min(100, avgEducationCoverage);
+  const safety = clampNumber(avgPoliceCoverage * 0.7 + avgFireCoverage * 0.3 + npsMetrics.safetyBonus, 0, 100);
+  const health = clampNumber(avgHealthCoverage * 0.8 + (100 - totalPollution / (size * size)) * 0.2 + npsMetrics.healthBonus - npsMetrics.smokeLevel * 0.18, 0, 100);
+  const education = clampNumber(avgEducationCoverage + npsMetrics.educationBonus, 0, 100);
   
   const greenRatio = (treeCount + waterCount + parkCount) / (size * size);
   const pollutionRatio = totalPollution / (size * size * 100);
-  const environment = Math.min(100, Math.max(0, greenRatio * 200 - pollutionRatio * 100 + 50));
+  const environment = clampNumber(
+    greenRatio * 200 - pollutionRatio * 100 + 50 + npsMetrics.environmentBonus - npsMetrics.dustLevel * 0.18 - npsMetrics.smokeLevel * 0.22 - npsMetrics.wastewaterLoad * 0.12,
+    0,
+    100
+  );
 
   const jobSatisfaction = jobs >= population ? 100 : (jobs / (population || 1)) * 100;
-  const happiness = Math.min(100, (
+  const happiness = clampNumber((
     safety * 0.15 +
     health * 0.2 +
     education * 0.15 +
     environment * 0.15 +
     jobSatisfaction * 0.2 +
-    (100 - taxRate * 3) * 0.15
-  ));
+    (100 - taxRate * 3) * 0.15 +
+    npsMetrics.happinessBonus -
+    npsMetrics.blackoutRisk * 0.18 -
+    npsMetrics.odorLevel * 0.1
+  ), 0, 100);
 
   return {
     population,
@@ -2026,6 +2083,35 @@ function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: n
     education,
     safety,
     environment,
+    communityTrust: npsMetrics.communityTrust,
+    esgScore: npsMetrics.esgScore,
+    totalPowerDemand: npsMetrics.totalPowerDemand,
+    totalPowerSupply: npsMetrics.totalPowerSupply,
+    powerBalance: npsMetrics.powerBalance,
+    powerReliability: npsMetrics.powerReliability,
+    blackoutRisk: npsMetrics.blackoutRisk,
+    batteryCapacity: npsMetrics.batteryCapacity,
+    batteryStored: npsMetrics.batteryStored,
+    biomassStock: npsMetrics.biomassStock,
+    biomassConsumptionRate: npsMetrics.biomassConsumptionRate,
+    fuelQuality: npsMetrics.fuelQuality,
+    fuelMoisture: npsMetrics.fuelMoisture,
+    boilerEfficiency: npsMetrics.boilerEfficiency,
+    steamPressure: npsMetrics.steamPressure,
+    turbineCondition: npsMetrics.turbineCondition,
+    generatorCondition: npsMetrics.generatorCondition,
+    machineAvailability: npsMetrics.machineAvailability,
+    maintenanceCost: npsMetrics.maintenanceCost,
+    sparePartsStock: npsMetrics.sparePartsStock,
+    dustLevel: npsMetrics.dustLevel,
+    smokeLevel: npsMetrics.smokeLevel,
+    odorLevel: npsMetrics.odorLevel,
+    wastewaterLoad: npsMetrics.wastewaterLoad,
+    ashStock: npsMetrics.ashStock,
+    waterLevel: npsMetrics.waterLevel,
+    waterQuality: npsMetrics.waterQuality,
+    waterEcologyScore: npsMetrics.waterEcologyScore,
+    logisticsEfficiency: npsMetrics.logisticsEfficiency,
     demand: {
       residential: residentialDemand,
       commercial: commercialDemand,
@@ -2078,7 +2164,13 @@ function updateBudgetCosts(grid: Tile[][], budget: Budget): Budget {
         case 'park': parkCount++; break;
         case 'park_large': parkCount++; break;
         case 'tennis': parkCount++; break;
-        case 'power_plant': powerCount++; break;
+        case 'power_plant':
+        case 'biomass_power_plant':
+        case 'solar_farm':
+        case 'floating_solar':
+        case 'battery_storage':
+          powerCount++;
+          break;
         case 'water_tower': waterCount++; break;
         case 'road': roadCount++; break;
         case 'subway_station': subwayStationCount++; break;
@@ -2317,7 +2409,7 @@ export function simulateTick(state: GameState): GameState {
           tile.building.constructionProgress !== undefined &&
           tile.building.constructionProgress < 100 &&
           !NO_CONSTRUCTION_TYPES.includes(tile.building.type)) {
-        const isUtilityBuilding = tile.building.type === 'power_plant' || tile.building.type === 'water_tower';
+        const isUtilityBuilding = POWER_SERVICE_BUILDINGS.has(tile.building.type) || tile.building.type === 'water_tower';
         const canConstruct = isUtilityBuilding || (tile.building.powered && tile.building.watered);
         
         if (canConstruct) {
@@ -2501,7 +2593,7 @@ export function simulateTick(state: GameState): GameState {
   const newEffectiveTaxRate = state.effectiveTaxRate + taxRateDiff * 0.03;
 
   // Calculate stats (using lagged effectiveTaxRate for demand calculations)
-  const newStats = calculateStats(newGrid, size, newBudget, state.taxRate, newEffectiveTaxRate, services);
+  const newStats = calculateStats(newGrid, size, newBudget, state.taxRate, newEffectiveTaxRate, services, state.hour);
   newStats.money = state.stats.money;
 
   // Smooth demand to prevent flickering in large cities
@@ -2633,6 +2725,12 @@ export function simulateTick(state: GameState): GameState {
 // Building sizes for multi-tile buildings (width x height)
 const BUILDING_SIZES: Partial<Record<BuildingType, { width: number; height: number }>> = {
   power_plant: { width: 2, height: 2 },
+  biomass_power_plant: { width: 2, height: 2 },
+  solar_farm: { width: 2, height: 2 },
+  floating_solar: { width: 2, height: 2 },
+  wood_chipping_plant: { width: 2, height: 2 },
+  biomass_plantation: { width: 2, height: 2 },
+  harvested_plantation: { width: 2, height: 2 },
   hospital: { width: 2, height: 2 },
   school: { width: 2, height: 2 },
   stadium: { width: 3, height: 3 },
@@ -2717,6 +2815,26 @@ function canPlaceMultiTileBuilding(
       if (tile.building.type !== 'grass' && tile.building.type !== 'tree') {
         return false;
       }
+    }
+  }
+
+  return true;
+}
+
+function canPlaceWaterFootprint(
+  grid: Tile[][],
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  gridSize: number
+): boolean {
+  if (x + width > gridSize || y + height > gridSize) return false;
+
+  for (let dy = 0; dy < height; dy++) {
+    for (let dx = 0; dx < width; dx++) {
+      const tile = grid[y + dy]?.[x + dx];
+      if (!tile || tile.building.type !== 'water') return false;
     }
   }
 
@@ -2902,8 +3020,10 @@ export function placeBuilding(
   const tile = state.grid[y]?.[x];
   if (!tile) return state;
 
-  // Can't build on water
-  if (tile.building.type === 'water') return state;
+  const requiresWaterFootprint = buildingType ? FLOATING_SOLAR_BUILDINGS.has(buildingType) : false;
+
+  // Water tiles are reserved for water-specific assets such as Floating Solar.
+  if (tile.building.type === 'water' && !requiresWaterFootprint) return state;
 
   // Can't place roads on existing buildings (only allow on grass, tree, existing roads, or rail - rail+road creates combined tile)
   // Note: 'empty' tiles are part of multi-tile building footprints, so roads can't be placed there either
@@ -2986,7 +3106,10 @@ export function placeBuilding(
     
     if (size.width > 1 || size.height > 1) {
       // Multi-tile building - check if we can place it
-      if (!canPlaceMultiTileBuilding(newGrid, x, y, size.width, size.height, state.gridSize)) {
+      const canPlace = requiresWaterFootprint
+        ? canPlaceWaterFootprint(newGrid, x, y, size.width, size.height, state.gridSize)
+        : canPlaceMultiTileBuilding(newGrid, x, y, size.width, size.height, state.gridSize);
+      if (!canPlace) {
         return state; // Can't place here
       }
       applyBuildingFootprint(newGrid, x, y, buildingType, 'none', 1);
@@ -2999,7 +3122,7 @@ export function placeBuilding(
       // Can't place on water, existing buildings, or 'empty' tiles (part of multi-tile buildings)
       // Note: 'road' and 'rail' are included here so they can extend over existing roads/rails,
       // but non-road/rail buildings are already blocked from roads/rails by the checks above
-      const allowedTypes: BuildingType[] = ['grass', 'tree', 'road', 'rail'];
+      const allowedTypes: BuildingType[] = requiresWaterFootprint ? ['water'] : ['grass', 'tree', 'road', 'rail'];
       if (!allowedTypes.includes(tile.building.type)) {
         return state; // Can't place on existing building or part of multi-tile building
       }
@@ -3227,12 +3350,13 @@ export function bulldozeTile(state: GameState, x: number, y: number): GameState 
   if (origin) {
     // Bulldoze the entire multi-tile building
     const size = getBuildingSize(origin.buildingType);
+    const restoredBuildingType = FLOATING_SOLAR_BUILDINGS.has(origin.buildingType) ? 'water' : 'grass';
     for (let dy = 0; dy < size.height; dy++) {
       for (let dx = 0; dx < size.width; dx++) {
         const clearX = origin.originX + dx;
         const clearY = origin.originY + dy;
         if (clearX < state.gridSize && clearY < state.gridSize) {
-          newGrid[clearY][clearX].building = createBuilding('grass');
+          newGrid[clearY][clearX].building = createBuilding(restoredBuildingType);
           newGrid[clearY][clearX].zone = 'none';
           newGrid[clearY][clearX].hasRailOverlay = false; // Clear rail overlay
           // Don't remove subway when bulldozing surface buildings
@@ -3674,6 +3798,7 @@ export function generateRandomAdvancedCity(size: number = DEFAULT_GRID_SIZE, cit
     taxRate: 7 + Math.floor(Math.random() * 4), // 7-10%
     effectiveTaxRate: 8,
     stats: {
+      ...createInitialStats(),
       population: totalPopulation,
       jobs: totalJobs,
       money: 500000 + Math.floor(Math.random() * 1000000),

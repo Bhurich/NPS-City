@@ -43,6 +43,7 @@ import {
 import { MiniMap } from '@/components/game/MiniMap';
 import { TopBar, StatsPanel } from '@/components/game/TopBar';
 import { CanvasIsometricGrid } from '@/components/game/CanvasIsometricGrid';
+import { POWER_SERVICE_BUILDINGS } from '@/lib/buildingGameplay';
 
 // Cargo type names for notifications
 const CARGO_TYPE_NAMES = [msg('containers'), msg('bulk materials'), msg('oil')];
@@ -274,7 +275,7 @@ export default function Game({ onExit, viewerMode = false }: { onExit?: () => vo
   const hasCapturedInitialTool = useRef(false);
   const currentSelectedToolRef = useRef<Tool>(state.selectedTool);
   const hasPowerPlant = useMemo(
-    () => state.grid.some(row => row.some(tile => tile.building.type === 'power_plant')),
+    () => state.grid.some(row => row.some(tile => POWER_SERVICE_BUILDINGS.has(tile.building.type))),
     [state.grid]
   );
   

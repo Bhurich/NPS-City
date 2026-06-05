@@ -34,6 +34,10 @@ const UI_LABELS = {
   education: msg('Education'),
   safety: msg('Safety'),
   environment: msg('Environment'),
+  power: msg('Power'),
+  esg: msg('ESG'),
+  community: msg('Community'),
+  blackout: msg('Blackout Risk'),
 };
 
 // ============================================================================
@@ -169,6 +173,9 @@ export const StatsPanel = React.memo(function StatsPanel() {
       <MiniStat icon={<EducationIcon size={12} />} label={label('education', 'การศึกษา')} value={stats.education} />
       <MiniStat icon={<SafetyIcon size={12} />} label={label('safety', 'ความปลอดภัย')} value={stats.safety} />
       <MiniStat icon={<EnvironmentIcon size={12} />} label={label('environment', 'สิ่งแวดล้อม')} value={stats.environment} />
+      <MiniStat icon={<SafetyIcon size={12} />} label={label('power', 'ไฟฟ้า')} value={stats.powerReliability} />
+      <MiniStat icon={<EnvironmentIcon size={12} />} label={label('esg', 'ESG')} value={stats.esgScore} />
+      <MiniStat icon={<HappyIcon size={12} />} label={label('community', 'ชุมชน')} value={stats.communityTrust} />
     </div>
   );
 });
@@ -255,6 +262,16 @@ export const TopBar = React.memo(function TopBar() {
           value={`$${(stats.income - stats.expenses).toLocaleString()}`} 
           label={label('monthly', 'รายเดือน')}
           variant={stats.income - stats.expenses >= 0 ? 'success' : 'destructive'}
+        />
+        <StatBadge
+          value={`${stats.powerBalance >= 0 ? '+' : ''}${stats.powerBalance} MW`}
+          label={label('power', 'ไฟฟ้า')}
+          variant={stats.powerBalance >= 0 ? 'success' : 'warning'}
+        />
+        <StatBadge
+          value={`${Math.round(stats.blackoutRisk)}%`}
+          label={label('blackout', 'เสี่ยงไฟดับ')}
+          variant={stats.blackoutRisk >= 45 ? 'destructive' : stats.blackoutRisk >= 20 ? 'warning' : 'success'}
         />
         
         <Separator orientation="vertical" className="h-8" />

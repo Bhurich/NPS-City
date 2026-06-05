@@ -138,6 +138,13 @@ const toolBuildingMap: Partial<Record<Tool, BuildingType>> = {
   tennis: 'tennis',
   power_plant: 'power_plant',
   water_tower: 'water_tower',
+  biomass_power_plant: 'biomass_power_plant',
+  solar_farm: 'solar_farm',
+  floating_solar: 'floating_solar',
+  battery_storage: 'battery_storage',
+  wood_chipping_plant: 'wood_chipping_plant',
+  biomass_plantation: 'biomass_plantation',
+  harvested_plantation: 'harvested_plantation',
   subway_station: 'subway_station',
   stadium: 'stadium',
   museum: 'museum',
@@ -181,6 +188,18 @@ const toolZoneMap: Partial<Record<Tool, ZoneType>> = {
   zone_industrial: 'industrial',
   zone_dezone: 'none',
 };
+
+function normalizeLoadedStats(parsed: GameState): void {
+  const defaultStats = createInitialGameState(1, parsed.cityName || 'NPS City').stats;
+  parsed.stats = {
+    ...defaultStats,
+    ...parsed.stats,
+    demand: {
+      ...defaultStats.demand,
+      ...(parsed.stats?.demand ?? {}),
+    },
+  };
+}
 
 // Load game state from localStorage
 // Supports both compressed (lz-string) and uncompressed (legacy) formats
@@ -297,6 +316,7 @@ function loadGameState(storageKey: string = STORAGE_KEY): GameState | null {
         if (!parsed.npsChallenge) {
           parsed.npsChallenge = createInitialNpsChallenge();
         }
+        normalizeLoadedStats(parsed as GameState);
         migrateCampaignYear(parsed);
         // Migrate to include UUID if missing
         if (!parsed.id) {
@@ -1574,6 +1594,11 @@ export function GameProvider({
       health: state.stats.health,
       education: state.stats.education,
       safety: state.stats.safety,
+      communityTrust: state.stats.communityTrust,
+      esgScore: state.stats.esgScore,
+      powerReliability: state.stats.powerReliability,
+      blackoutRisk: state.stats.blackoutRisk,
+      powerBalance: state.stats.powerBalance,
       income: state.stats.income,
       expenses: state.stats.expenses,
       year: state.year,
