@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { useMultiplayer } from '@/context/MultiplayerContext';
 import { GameState } from '@/types/game';
 import { createInitialGameState, DEFAULT_GRID_SIZE } from '@/lib/simulation';
-import { Copy, Check, Loader2, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Copy, Check, Loader2, AlertCircle, ArrowLeft, Sparkles, PencilRuler } from 'lucide-react';
 import { T, useGT, Plural, Var } from 'gt-next';
 
 interface CoopModalProps {
@@ -27,6 +27,7 @@ interface CoopModalProps {
 }
 
 type Mode = 'select' | 'create' | 'join';
+type CityTemplate = 'blank' | 'example';
 
 export function CoopModal({
   open,
@@ -41,6 +42,9 @@ export function CoopModal({
   const [joinCode, setJoinCode] = useState('');
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [cityTemplate, setCityTemplate] = useState<CityTemplate>('blank');
+  const [createdCityState, setCreatedCityState] = useState<GameState | null>(null);
+  const [createdCityName, setCreatedCityName] = useState('');
   const [autoJoinAttempted, setAutoJoinAttempted] = useState(false);
   const [waitingForState, setWaitingForState] = useState(false);
   const [autoJoinError, setAutoJoinError] = useState<string | null>(null);
@@ -89,34 +93,62 @@ export function CoopModal({
       setMode('select');
       setIsLoading(false);
       setCopied(false);
+      setCityTemplate('blank');
+      setCreatedCityState(null);
+      setCreatedCityName('');
       setAutoJoinAttempted(false);
       setWaitingForState(false);
       setAutoJoinError(null);
     }
   }, [open, waitingForState, autoJoinAttempted, initialState, leaveRoom]);
 
+  const buildRoomState = async (): Promise<GameState> => {
+    const trimmedCityName = cityName.trim();
+    if (currentGameState) {
+      return { ...currentGameState, cityName: trimmedCityName };
+    }
+
+    if (cityTemplate === 'example') {
+      const response = await fetch('/example-states/example_state_9.json');
+      if (!response.ok) {
+        throw new Error(gt('Failed to load example city'));
+      }
+      const exampleState = await response.json() as GameState;
+      return {
+        ...exampleState,
+        cityName: trimmedCityName,
+        speed: 0,
+        selectedTool: 'select',
+      };
+    }
+
+    return createInitialGameState(DEFAULT_GRID_SIZE, trimmedCityName);
+  };
+
   const handleCreateRoom = async () => {
     if (!cityName.trim()) return;
     
     setIsLoading(true);
     try {
-      // Use the current game state if provided, otherwise create a fresh city
-      const stateToShare = currentGameState 
-        ? { ...currentGameState, cityName } 
-        : createInitialGameState(DEFAULT_GRID_SIZE, cityName);
+      const trimmedCityName = cityName.trim();
+      const stateToShare = await buildRoomState();
       
-      const code = await createRoom(cityName, stateToShare);
+      const code = await createRoom(trimmedCityName, stateToShare);
       // Update URL to show room code
       window.history.replaceState({}, '', `/coop/${code}`);
-      
-      // Start the game immediately with the state and close the modal
-      onStartGame(true, stateToShare, code);
-      onOpenChange(false);
+      setCreatedCityState(stateToShare);
+      setCreatedCityName(trimmedCityName);
     } catch (err) {
       console.error('Failed to create room:', err);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleStartCreatedRoom = () => {
+    if (!createdCityState || !roomCode) return;
+    onStartGame(true, createdCityState, roomCode);
+    onOpenChange(false);
   };
 
   const handleJoinRoom = async () => {
@@ -360,7 +392,7 @@ export function CoopModal({
             </DialogDescription>
           </DialogHeader>
 
-          {!roomCode ? (
+          {!roomCode || !createdCityState ? (
             <div className="flex flex-col gap-4 mt-4">
               <div className="space-y-2">
                 <Label htmlFor="cityName" className="text-slate-300">
@@ -373,6 +405,41 @@ export function CoopModal({
                   placeholder={gt('My Co-op City')}
                   className="bg-slate-800 border-slate-600 text-white placeholder:text-slate-500"
                 />
+                <p className="text-xs text-slate-500">
+                  ต้องตั้งชื่อเมืองก่อนสร้างห้อง ทุกห้องจะมีรหัสสำหรับแชร์ให้เพื่อน
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-slate-300">รูปแบบเมืองเริ่มต้น</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCityTemplate('blank')}
+                    className={`rounded-2xl border p-4 text-left transition-all ${
+                      cityTemplate === 'blank'
+                        ? 'border-sky-400 bg-sky-400/15 text-white shadow-[0_0_0_2px_rgba(56,189,248,0.16)]'
+                        : 'border-white/10 bg-white/5 text-white/65 hover:bg-white/10'
+                    }`}
+                  >
+                    <PencilRuler className="mb-3 h-5 w-5 text-sky-300" />
+                    <div className="text-sm font-medium">สร้างเอง</div>
+                    <div className="mt-1 text-xs text-slate-400">เริ่มจากพื้นที่ว่าง วางแผนเมืองเองทั้งหมด</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCityTemplate('example')}
+                    className={`rounded-2xl border p-4 text-left transition-all ${
+                      cityTemplate === 'example'
+                        ? 'border-emerald-400 bg-emerald-400/15 text-white shadow-[0_0_0_2px_rgba(52,211,153,0.16)]'
+                        : 'border-white/10 bg-white/5 text-white/65 hover:bg-white/10'
+                    }`}
+                  >
+                    <Sparkles className="mb-3 h-5 w-5 text-emerald-300" />
+                    <div className="text-sm font-medium">ใช้ตัวอย่าง</div>
+                    <div className="mt-1 text-xs text-slate-400">เริ่มจากเมืองตัวอย่าง แล้วทีมช่วยกันต่อยอด</div>
+                  </button>
+                </div>
               </div>
 
               {error && (
@@ -401,15 +468,22 @@ export function CoopModal({
                       Creating...
                     </T>
                   ) : (
-                    <T>Create City</T>
+                    <T>Create Room</T>
                   )}
                 </Button>
               </div>
             </div>
           ) : (
             <div className="flex flex-col gap-4 mt-4">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs text-slate-400">ชื่อเมือง</p>
+                <p className="mt-1 text-xl font-semibold text-white">{createdCityName || cityName}</p>
+                <p className="mt-2 text-xs text-slate-500">
+                  ส่งรหัสนี้ให้เพื่อนเพื่อเข้ามาร่วมสร้างเมืองเดียวกัน
+                </p>
+              </div>
               {/* Invite Code Display */}
-              <div className="bg-slate-800 rounded-lg p-6 text-center">
+              <div className="bg-slate-800 rounded-2xl p-6 text-center">
                 <T><p className="text-slate-400 text-sm mb-2">Invite Code</p></T>
                 <p className="text-4xl font-mono font-bold tracking-widest text-white">
                   <T><Var>{roomCode}</Var></T>
@@ -459,10 +533,10 @@ export function CoopModal({
 
               {/* Continue button */}
               <Button
-                onClick={() => onOpenChange(false)}
+                onClick={handleStartCreatedRoom}
                 className="w-full mt-2 bg-slate-700 hover:bg-slate-600 text-white border border-slate-600 rounded-md"
               >
-                <T>Continue Playing</T>
+                เริ่มเล่นเมืองนี้
               </Button>
             </div>
           )}

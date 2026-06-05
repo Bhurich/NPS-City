@@ -57,6 +57,7 @@ export type SavedCityInfo = {
 
 type GameContextValue = {
   state: GameState;
+  isReadOnly: boolean;
   // PERF: Ref to latest state for real-time access without React re-renders
   // Canvas should use this instead of state.grid for smooth updates
   latestStateRef: React.RefObject<GameState>;
@@ -663,7 +664,15 @@ function deleteCityState(cityId: string): void {
   }
 }
 
-export function GameProvider({ children, startFresh = false }: { children: React.ReactNode; startFresh?: boolean }) {
+export function GameProvider({
+  children,
+  startFresh = false,
+  readOnly = false,
+}: {
+  children: React.ReactNode;
+  startFresh?: boolean;
+  readOnly?: boolean;
+}) {
   // Start with a default state, we'll load from localStorage after mount (unless startFresh is true)
   const [state, setState] = useState<GameState>(() => createInitialGameState(DEFAULT_GRID_SIZE, 'NPS City'));
   
@@ -677,6 +686,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   // Callback for multiplayer action broadcast
   const placeCallbackRef = useRef<((args: { x: number; y: number; tool: Tool }) => void) | null>(null);
   const bridgeCallbackRef = useRef<((args: { pathTiles: { x: number; y: number }[]; trackType: 'road' | 'rail' }) => void) | null>(null);
+  const readOnlyRef = useRef(readOnly);
   
   // Sprite pack state
   const [currentSpritePack, setCurrentSpritePack] = useState<SpritePack>(() => getSpritePack(DEFAULT_SPRITE_PACK_ID));
@@ -686,6 +696,13 @@ export function GameProvider({ children, startFresh = false }: { children: React
   
   // Saved cities state for multi-city save system
   const [savedCities, setSavedCities] = useState<SavedCityMeta[]>([]);
+
+  useEffect(() => {
+    readOnlyRef.current = readOnly;
+    if (readOnly) {
+      setState((prev) => (prev.speed === 0 ? prev : { ...prev, speed: 0, selectedTool: 'select' }));
+    }
+  }, [readOnly]);
   
   // Load game state and sprite pack from localStorage on mount (client-side only)
   useEffect(() => {
@@ -818,7 +835,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
 
-    if (state.speed > 0) {
+    if (!readOnly && state.speed > 0) {
       // Check if running on mobile for performance optimization
       const isMobileDevice = typeof window !== 'undefined' && (
         window.innerWidth < 768 ||
@@ -856,17 +873,20 @@ export function GameProvider({ children, startFresh = false }: { children: React
         clearInterval(timer);
       }
     };
-  }, [state.speed]);
+  }, [state.speed, readOnly]);
 
   const setTool = useCallback((tool: Tool) => {
+    if (readOnlyRef.current && tool !== 'select') return;
     setState((prev) => ({ ...prev, selectedTool: tool, activePanel: 'none' }));
   }, []);
 
   const setSpeed = useCallback((speed: 0 | 1 | 2 | 3) => {
+    if (readOnlyRef.current) return;
     setState((prev) => ({ ...prev, speed }));
   }, []);
 
   const setTaxRate = useCallback((rate: number) => {
+    if (readOnlyRef.current) return;
     setState((prev) => ({ ...prev, taxRate: clamp(rate, 0, 100) }));
   }, []);
 
@@ -879,6 +899,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
 
   const setBudgetFunding = useCallback(
     (key: keyof Budget, funding: number) => {
+      if (readOnlyRef.current) return;
       const clamped = clamp(funding, 0, 100);
       setState((prev) => ({
         ...prev,
@@ -892,6 +913,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   );
 
   const placeAtTile = useCallback((x: number, y: number, isRemote = false) => {
+    if (readOnlyRef.current) return;
     // For multiplayer broadcast, we need to capture the tool synchronously
     // before React batches the setState. We read from the latest state ref.
     const currentTool = latestStateRef.current.selectedTool;
@@ -996,6 +1018,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   }, []);
 
   const upgradeServiceBuildingHandler = useCallback((x: number, y: number) => {
+    if (readOnlyRef.current) return false;
     let upgradeSucceeded = false;
     setState((prev) => {
       const upgradedState = upgradeServiceBuilding(prev, x, y);
@@ -1010,6 +1033,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
 
   // Called after a road/rail drag operation to create bridges for water crossings
   const finishTrackDrag = useCallback((pathTiles: { x: number; y: number }[], trackType: 'road' | 'rail', isRemote = false) => {
+    if (readOnlyRef.current) return;
     setState((prev) => createBridgesOnPath(prev, pathTiles, trackType));
     
     // Broadcast to multiplayer if this is a local action (not remote)
@@ -1019,6 +1043,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   }, []);
 
   const connectToCity = useCallback((cityId: string) => {
+    if (readOnlyRef.current) return;
     setState((prev) => {
       const city = prev.adjacentCities.find(c => c.id === cityId);
       if (!city || city.connected) return prev;
@@ -1055,6 +1080,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   }, []);
 
   const discoverCity = useCallback((cityId: string) => {
+    if (readOnlyRef.current) return;
     setState((prev) => {
       const city = prev.adjacentCities.find(c => c.id === cityId);
       if (!city || city.discovered) return prev;
@@ -1084,6 +1110,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   // Check for cities that should be discovered based on roads reaching edges
   // Calls onDiscover callback with city info if a new city was discovered
   const checkAndDiscoverCities = useCallback((onDiscover?: (city: { id: string; direction: 'north' | 'south' | 'east' | 'west'; name: string }) => void): void => {
+    if (readOnlyRef.current) return;
     setState((prev) => {
       const newlyDiscovered = checkForDiscoverableCities(prev.grid, prev.gridSize, prev.adjacentCities);
       
@@ -1115,6 +1142,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   }, []);
 
   const setDisastersEnabled = useCallback((enabled: boolean) => {
+    if (readOnlyRef.current) return;
     setState((prev) => ({ ...prev, disastersEnabled: enabled }));
   }, []);
   
@@ -1127,6 +1155,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   }, []);
 
   const setSpritePack = useCallback((packId: string) => {
+    if (readOnlyRef.current) return;
     const pack = getSpritePack(packId);
     setCurrentSpritePack(pack);
     setActiveSpritePack(pack);
@@ -1134,6 +1163,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   }, []);
 
   const setDayNightMode = useCallback((mode: DayNightMode) => {
+    if (readOnlyRef.current) return;
     setDayNightModeState(mode);
     saveDayNightMode(mode);
   }, []);
@@ -1147,6 +1177,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
       : 22; // Night time
 
   const newGame = useCallback((name?: string, size?: number) => {
+    if (readOnlyRef.current) return;
     clearGameState(); // Clear saved state when starting fresh
     const fresh = createInitialGameState(size ?? DEFAULT_GRID_SIZE, name || 'NPS City');
     // Increment gameVersion from current state to ensure vehicles/entities are cleared
@@ -1157,6 +1188,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   }, []);
 
   const loadState = useCallback((stateString: string): boolean => {
+    if (readOnlyRef.current) return false;
     try {
       const parsed = JSON.parse(stateString);
       // Validate it has essential properties
@@ -1244,6 +1276,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   }, [state]);
 
   const generateRandomCity = useCallback(() => {
+    if (readOnlyRef.current) return;
     clearGameState(); // Clear saved state when generating a new city
     const randomCity = generateRandomAdvancedCity(DEFAULT_GRID_SIZE);
     // Increment gameVersion to ensure vehicles/entities are cleared
@@ -1255,6 +1288,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
 
   // Expand the city grid by 15 tiles on each side (30x30 total increase)
   const expandCity = useCallback(() => {
+    if (readOnlyRef.current) return;
     setState((prev) => {
       const { grid: newGrid, newSize } = expandGrid(prev.grid, prev.gridSize, 15);
       
@@ -1345,6 +1379,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
 
   // Shrink the city grid by 15 tiles on each side (30x30 total reduction)
   const shrinkCity = useCallback((): boolean => {
+    if (readOnlyRef.current) return false;
     let success = false;
     setState((prev) => {
       const result = shrinkGrid(prev.grid, prev.gridSize, 15);
@@ -1444,6 +1479,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   }, []);
 
   const addMoney = useCallback((amount: number) => {
+    if (readOnlyRef.current) return;
     setState((prev) => ({
       ...prev,
       stats: {
@@ -1454,6 +1490,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   }, []);
 
   const addNotification = useCallback((title: string, description: string, icon: string) => {
+    if (readOnlyRef.current) return;
     setState((prev) => {
       const newNotifications = [
         {
@@ -1477,6 +1514,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
   }, []);
 
   const createStarterCity = useCallback(() => {
+    if (readOnlyRef.current) return;
     setState((prev) => {
       let nextState = prev;
       const startX = Math.max(4, Math.floor(prev.gridSize / 2) - 6);
@@ -1531,11 +1569,13 @@ export function GameProvider({ children, startFresh = false }: { children: React
 
   // Save current city for restore (when viewing shared cities)
   const saveCurrentCityForRestore = useCallback(() => {
+    if (readOnlyRef.current) return;
     saveCityForRestore(state);
   }, [state]);
 
   // Restore saved city
   const restoreSavedCity = useCallback((): boolean => {
+    if (readOnlyRef.current) return false;
     const savedState = loadSavedCityState();
     if (savedState) {
       skipNextSaveRef.current = true;
@@ -1558,6 +1598,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
 
   // Save current city to the multi-save system
   const saveCity = useCallback(() => {
+    if (readOnlyRef.current) return;
     const cityMeta: SavedCityMeta = {
       id: state.id,
       cityName: state.cityName,
@@ -1599,6 +1640,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
 
   // Load a saved city from the multi-save system
   const loadSavedCity = useCallback((cityId: string): boolean => {
+    if (readOnlyRef.current) return false;
     const cityState = loadCityState(cityId);
     if (!cityState) return false;
     
@@ -1671,6 +1713,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
 
   // Delete a saved city from the multi-save system
   const deleteSavedCity = useCallback((cityId: string) => {
+    if (readOnlyRef.current) return;
     // Delete the city state
     deleteCityState(cityId);
     
@@ -1684,6 +1727,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
 
   // Rename a saved city
   const renameSavedCity = useCallback((cityId: string, newName: string) => {
+    if (readOnlyRef.current) return;
     // Load the city state, update the name, and save it back
     const cityState = loadCityState(cityId);
     if (cityState) {
@@ -1708,6 +1752,7 @@ export function GameProvider({ children, startFresh = false }: { children: React
 
   const value: GameContextValue = {
     state,
+    isReadOnly: readOnly,
     latestStateRef,
     setTool,
     setSpeed,

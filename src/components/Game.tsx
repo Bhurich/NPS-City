@@ -194,7 +194,7 @@ function PowerPlantQuestionDialog({
 export default function Game({ onExit }: { onExit?: () => void }) {
   const gt = useGT();
   const m = useMessages();
-  const { state, setTool, setActivePanel, addMoney, addNotification, setSpeed, createStarterCity } = useGame();
+  const { state, isReadOnly, setTool, setActivePanel, addMoney, addNotification, setSpeed, createStarterCity } = useGame();
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('none');
   const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
   const [showStarterGuide, setShowStarterGuide] = useState(() => {
@@ -253,6 +253,11 @@ export default function Game({ onExit }: { onExit?: () => void }) {
   }, [state.selectedTool]);
 
   useEffect(() => {
+    if (isReadOnly) {
+      setShowStarterGuide(false);
+      setShowPowerPlantQuestion(false);
+      return;
+    }
     if (!hasPowerPlant || typeof window === 'undefined') return;
     if (localStorage.getItem(POWER_PLANT_QUESTION_KEY) === 'true') return;
 
@@ -261,7 +266,7 @@ export default function Game({ onExit }: { onExit?: () => void }) {
     }, 800);
 
     return () => window.clearTimeout(timeoutId);
-  }, [hasPowerPlant]);
+  }, [hasPowerPlant, isReadOnly]);
 
   const handlePowerPlantQuestionAnswer = useCallback(() => {
     if (typeof window !== 'undefined') {
@@ -355,10 +360,10 @@ export default function Game({ onExit }: { onExit?: () => void }) {
         } else if (state.selectedTool !== 'select') {
           setTool('select');
         }
-      } else if (e.key === 'b' || e.key === 'B') {
+      } else if (!isReadOnly && (e.key === 'b' || e.key === 'B')) {
         e.preventDefault();
         setTool('bulldoze');
-      } else if (e.key === 'p' || e.key === 'P') {
+      } else if (!isReadOnly && (e.key === 'p' || e.key === 'P')) {
         e.preventDefault();
         // Toggle pause/unpause: if paused (speed 0), resume to normal (speed 1)
         // If running, pause (speed 0)
@@ -368,11 +373,11 @@ export default function Game({ onExit }: { onExit?: () => void }) {
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state.activePanel, state.selectedTool, state.speed, selectedTile, setActivePanel, setTool, setSpeed, overlayMode]);
+  }, [state.activePanel, state.selectedTool, state.speed, selectedTile, setActivePanel, setTool, setSpeed, overlayMode, isReadOnly]);
 
   // Handle cheat code triggers
   useEffect(() => {
-    if (!triggeredCheat) return;
+    if (!triggeredCheat || isReadOnly) return;
 
     switch (triggeredCheat.type) {
       case 'konami':
@@ -400,13 +405,14 @@ export default function Game({ onExit }: { onExit?: () => void }) {
         clearTriggeredCheat();
         break;
     }
-  }, [triggeredCheat, addMoney, addNotification, clearTriggeredCheat, gt]);
+  }, [triggeredCheat, addMoney, addNotification, clearTriggeredCheat, gt, isReadOnly]);
   
   // Track barge deliveries to show occasional notifications
   const bargeDeliveryCountRef = useRef(0);
   
   // Handle barge cargo delivery - adds money to the city treasury
   const handleBargeDelivery = useCallback((cargoValue: number, cargoType: number) => {
+    if (isReadOnly) return;
     addMoney(cargoValue);
     bargeDeliveryCountRef.current++;
 
@@ -419,7 +425,13 @@ export default function Game({ onExit }: { onExit?: () => void }) {
         'ship'
       );
     }
-  }, [addMoney, addNotification, gt, m]);
+  }, [addMoney, addNotification, gt, m, isReadOnly]);
+
+  const readOnlyBadge = isReadOnly ? (
+    <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 rounded-full border border-sky-200 bg-white/90 px-4 py-2 text-sm font-medium text-slate-700 shadow-[0_12px_32px_rgba(79,128,166,0.18)] backdrop-blur">
+      โหมดตัวอย่าง: ดูได้อย่างเดียว ไม่สามารถสร้าง แก้ไข หรือปรับเวลาได้
+    </div>
+  ) : null;
 
   // Mobile layout
   if (isMobile) {
@@ -445,6 +457,7 @@ export default function Game({ onExit }: { onExit?: () => void }) {
           
           {/* Main canvas area - fills remaining space, with padding for top/bottom bars */}
           <div className="flex-1 relative overflow-hidden" style={{ paddingTop: '72px', paddingBottom: '76px' }}>
+            {readOnlyBadge}
             <CanvasIsometricGrid 
               overlayMode={overlayMode} 
               selectedTile={selectedTile} 
@@ -507,7 +520,7 @@ export default function Game({ onExit }: { onExit?: () => void }) {
           <VinnieDialog open={showVinnieDialog} onOpenChange={setShowVinnieDialog} />
 
           <StarterGuideDialog
-            open={showStarterGuide}
+            open={!isReadOnly && showStarterGuide}
             onOpenChange={setShowStarterGuide}
             onCreateStarterCity={createStarterCity}
           />
@@ -539,6 +552,7 @@ export default function Game({ onExit }: { onExit?: () => void }) {
           <TopBar />
           <StatsPanel />
           <div className="flex-1 relative overflow-visible">
+            {readOnlyBadge}
             <CanvasIsometricGrid 
               overlayMode={overlayMode} 
               selectedTile={selectedTile} 
@@ -597,7 +611,7 @@ export default function Game({ onExit }: { onExit?: () => void }) {
         
         <VinnieDialog open={showVinnieDialog} onOpenChange={setShowVinnieDialog} />
         <StarterGuideDialog
-          open={showStarterGuide}
+          open={!isReadOnly && showStarterGuide}
           onOpenChange={setShowStarterGuide}
           onCreateStarterCity={createStarterCity}
         />

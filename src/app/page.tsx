@@ -29,6 +29,7 @@ import type { User } from '@supabase/supabase-js';
 const STORAGE_KEY = 'isocity-game-state';
 const SAVED_CITIES_INDEX_KEY = 'isocity-saved-cities-index';
 const PLAYER_PROFILE_PREFIX = 'nps-city-player-profile-';
+const READ_ONLY_VIEW_STORAGE_KEY = 'nps-city-read-only-view';
 
 // Background color to filter from sprite sheets (red)
 const BACKGROUND_COLOR = { r: 255, g: 0, b: 0 };
@@ -468,6 +469,10 @@ export default function HomePage() {
   const [showCoopModal, setShowCoopModal] = useState(false);
   const [isMultiplayer, setIsMultiplayer] = useState(false);
   const [startFreshGame, setStartFreshGame] = useState(false);
+  const [readOnlyMode, setReadOnlyMode] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem(READ_ONLY_VIEW_STORAGE_KEY) === 'true';
+  });
   const [pendingRoomCode, setPendingRoomCode] = useState<string | null>(null);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
@@ -707,6 +712,8 @@ export default function HomePage() {
     setShowGame(false);
     setIsMultiplayer(false);
     setStartFreshGame(false);
+    setReadOnlyMode(false);
+    localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
     setSavedCities(loadSavedCities());
     setHasSaved(hasSavedGame());
     // Clear room code from URL
@@ -728,6 +735,8 @@ export default function HomePage() {
       const saved = localStorage.getItem(SAVED_CITY_PREFIX + city.id);
       if (saved) {
         localStorage.setItem(STORAGE_KEY, saved);
+        localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
+        setReadOnlyMode(false);
         setShowGame(true);
       }
     } catch {
@@ -755,6 +764,8 @@ export default function HomePage() {
   // Handle co-op game start
   const handleCoopStart = (isHost: boolean, initialState?: GameState, roomCode?: string) => {
     setIsMultiplayer(true);
+    setReadOnlyMode(false);
+    localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
     
     if (isHost && initialState) {
       // Host starts with the state they created - save it so GameProvider loads it
@@ -795,6 +806,45 @@ export default function HomePage() {
     setShowGame(true);
   };
 
+  const startPlayableGame = () => {
+    localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
+    setReadOnlyMode(false);
+    setShowGame(true);
+  };
+
+  const openCoopSetup = () => {
+    localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
+    setReadOnlyMode(false);
+    setShowCoopModal(true);
+  };
+
+  const loadReadOnlyExample = async () => {
+    if (window.location.search.includes('room=')) {
+      window.history.replaceState({}, '', '/');
+      setPendingRoomCode(null);
+    }
+
+    const response = await fetch('/example-states/example_state_9.json');
+    const exampleState = await response.json();
+
+    try {
+      const compressed = compressToUTF16(JSON.stringify({
+        ...exampleState,
+        speed: 0,
+        selectedTool: 'select',
+      }));
+      localStorage.setItem(STORAGE_KEY, compressed);
+      localStorage.setItem(READ_ONLY_VIEW_STORAGE_KEY, 'true');
+    } catch (e) {
+      console.error('Failed to save example state:', e);
+    }
+
+    setIsMultiplayer(false);
+    setStartFreshGame(false);
+    setReadOnlyMode(true);
+    setShowGame(true);
+  };
+
   if (isChecking) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
@@ -813,7 +863,7 @@ export default function HomePage() {
     // Always wrap in MultiplayerContextProvider so players can invite others from within the game
     return (
       <MultiplayerContextProvider>
-        <GameProvider startFresh={startFreshGame}>
+        <GameProvider startFresh={startFreshGame} readOnly={readOnlyMode}>
           {gameContent}
         </GameProvider>
       </MultiplayerContextProvider>
@@ -854,14 +904,14 @@ export default function HomePage() {
             />
 
             <Button 
-              onClick={() => setShowGame(true)}
+              onClick={startPlayableGame}
               className="w-full py-4 sm:py-6 text-lg sm:text-xl font-light tracking-wide bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-none transition-all duration-300"
             >
               {hasSaved ? <T>Continue</T> : <T>New Game</T>}
             </Button>
 
             <Button
-              onClick={() => setShowCoopModal(true)}
+              onClick={openCoopSetup}
               variant="outline"
               className="w-full py-4 sm:py-6 text-lg sm:text-xl font-light tracking-wide bg-white/5 hover:bg-white/15 text-white/60 hover:text-white border border-white/15 rounded-none transition-all duration-300"
             >
@@ -869,22 +919,7 @@ export default function HomePage() {
             </Button>
 
             <Button
-              onClick={async () => {
-                // Clear any room code from URL to prevent multiplayer conflicts
-                if (window.location.search.includes('room=')) {
-                  window.history.replaceState({}, '', '/');
-                  setPendingRoomCode(null);
-                }
-                const response = await fetch('/example-states/example_state_9.json');
-                const exampleState = await response.json();
-                try {
-                  const compressed = compressToUTF16(JSON.stringify(exampleState));
-                  localStorage.setItem(STORAGE_KEY, compressed);
-                } catch (e) {
-                  console.error('Failed to save example state:', e);
-                }
-                setShowGame(true);
-              }}
+              onClick={loadReadOnlyExample}
               variant="outline"
               className="w-full py-4 sm:py-6 text-lg sm:text-xl font-light tracking-wide bg-transparent hover:bg-white/10 text-white/40 hover:text-white/60 border border-white/10 rounded-none transition-all duration-300"
             >
@@ -958,35 +993,20 @@ export default function HomePage() {
               />
 
               <Button 
-                onClick={() => setShowGame(true)}
+                onClick={startPlayableGame}
                 className="w-64 py-8 text-2xl font-light tracking-wide bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-none transition-all duration-300"
               >
                 {hasSaved ? <T>Continue</T> : <T>New Game</T>}
               </Button>
               <Button
-                onClick={() => setShowCoopModal(true)}
+                onClick={openCoopSetup}
                 variant="outline"
                 className="w-64 py-8 text-2xl font-light tracking-wide bg-white/5 hover:bg-white/15 text-white/60 hover:text-white border border-white/15 rounded-none transition-all duration-300"
               >
                 <T>Co-op</T>
               </Button>
               <Button
-                onClick={async () => {
-                  // Clear any room code from URL to prevent multiplayer conflicts
-                  if (window.location.search.includes('room=')) {
-                    window.history.replaceState({}, '', '/');
-                    setPendingRoomCode(null);
-                  }
-                  const response = await fetch('/example-states/example_state_9.json');
-                  const exampleState = await response.json();
-                  try {
-                    const compressed = compressToUTF16(JSON.stringify(exampleState));
-                    localStorage.setItem(STORAGE_KEY, compressed);
-                  } catch (e) {
-                    console.error('Failed to save example state:', e);
-                  }
-                  setShowGame(true);
-                }}
+                onClick={loadReadOnlyExample}
                 variant="outline"
                 className="w-64 py-8 text-2xl font-light tracking-wide bg-transparent hover:bg-white/10 text-white/40 hover:text-white/60 border border-white/10 rounded-none transition-all duration-300"
               >
