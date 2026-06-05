@@ -911,6 +911,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       if (currentSpritePack.mansionsSrc) {
         loadSpriteImage(currentSpritePack.mansionsSrc, true).catch(console.error);
       }
+      if (currentSpritePack.directAssetSrc) {
+        Object.values(currentSpritePack.directAssetSrc).forEach((src) => {
+          loadSpriteImage(src, true).catch(console.error);
+        });
+      }
       // Load airplane sprite sheet (always loaded, not dependent on sprite pack)
       loadSpriteImage(AIRPLANE_SPRITE_SRC, false).catch(console.error);
     };
@@ -1322,6 +1327,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       const buildingType = tile.building.type;
       const w = TILE_WIDTH;
       const h = TILE_HEIGHT;
+
+      // Footprint filler tiles for multi-tile buildings should be invisible.
+      // The actual 2x2/3x3 sprite is drawn once from the origin tile.
+      if (buildingType === 'empty') {
+        return;
+      }
       
       // Handle roads separately with adjacency
       if (buildingType === 'road') {
@@ -1575,8 +1586,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                 drawPosY = y + screenOffsetY;
               }
               
-              // Calculate destination size
-              const destWidth = w * 1.2 * scaleMultiplier;
+              // Calculate destination size. Direct NPS assets are already cropped
+              // isometric objects, so size them against the whole footprint.
+              const directFootprintScale = spriteSourceInfo.variantType === 'direct'
+                ? Math.max(1.75, Math.max(buildingSize.width, buildingSize.height) * 1.05)
+                : 1.2;
+              const destWidth = w * directFootprintScale * scaleMultiplier;
               const aspectRatio = coords.sh / coords.sw;
               const destHeight = destWidth * aspectRatio;
               
@@ -1584,7 +1599,9 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
               const drawX = drawPosX + w / 2 - destWidth / 2 + offsets.horizontal * w;
               
               let verticalPush: number;
-              if (isMultiTile) {
+              if (spriteSourceInfo.variantType === 'direct') {
+                verticalPush = h * 0.15;
+              } else if (isMultiTile) {
                 const footprintDepth = buildingSize.width + buildingSize.height - 2;
                 verticalPush = footprintDepth * h * 0.25;
               } else {
@@ -1635,6 +1652,8 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                 );
               }
             }
+          } else if (spriteSourceInfo.variantType === 'direct') {
+            return;
           } else {
             // Sprite sheet not loaded yet - draw placeholder building
             drawPlaceholderBuilding(ctx, x, y, buildingType, w, h);
