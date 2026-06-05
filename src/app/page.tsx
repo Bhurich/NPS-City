@@ -1210,8 +1210,8 @@ export default function HomePage() {
   // Desktop landing page
   return (
     <MultiplayerContextProvider>
-      <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-8">
-        <div className="max-w-7xl w-full space-y-8">
+      <main className="h-screen overflow-y-auto bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-8">
+        <div className="mx-auto max-w-7xl w-full space-y-8">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             {/* Left - Title and Start Button */}
             <div className="flex flex-col items-center lg:items-start justify-center space-y-12">

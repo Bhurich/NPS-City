@@ -225,21 +225,8 @@ const HoverSubmenu = React.memo(function HoverSubmenu({
 
   const handleButtonClick = useCallback(() => {
     clearCloseTimeout();
-    if (!isOpen && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const spaceBelow = viewportHeight - rect.top;
-      const openUpward = forceOpenUpward || (spaceBelow < SUBMENU_MAX_HEIGHT && rect.top > SUBMENU_MAX_HEIGHT);
-
-      setMenuPosition({
-        top: openUpward ? rect.bottom : rect.top,
-        left: rect.right + SUBMENU_GAP,
-        buttonHeight: rect.height,
-        openUpward,
-      });
-    }
-    setIsOpen(true);
-  }, [clearCloseTimeout, forceOpenUpward, isOpen]);
+    setIsOpen(prev => !prev);
+  }, [clearCloseTimeout]);
   
   const handleSubmenuEnter = useCallback(() => {
     clearCloseTimeout();
@@ -262,12 +249,7 @@ const HoverSubmenu = React.memo(function HoverSubmenu({
   }, []);
   
   return (
-    <div 
-      className="relative"
-      onMouseEnter={handleMouseEnter}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-    >
+    <div className="relative">
       {/* Category Header Button */}
       <Button
         ref={buttonRef}
@@ -288,41 +270,12 @@ const HoverSubmenu = React.memo(function HoverSubmenu({
         </svg>
       </Button>
       
-      {/* Invisible bridge/safe-zone between button and submenu for triangle rule */}
       {isOpen && (
         <div
-          className="fixed"
-          style={{
-            top: `${menuPosition.top}px`,
-            left: `${menuPosition.left - SUBMENU_GAP}px`,
-            width: `${SUBMENU_GAP + 8}px`, // Overlap slightly with submenu
-            height: `${Math.max(menuPosition.buttonHeight, 200)}px`, // Tall enough to cover path
-            zIndex: 9998,
-          }}
-          onMouseEnter={handleSubmenuEnter}
-          onMouseLeave={handleSubmenuLeave}
-        />
-      )}
-      
-      {/* Flyout Submenu - uses fixed positioning to escape all parent containers */}
-      {isOpen && (
-        <div 
           ref={submenuRef}
-          className="fixed w-52 nps-glass-panel rounded-2xl overflow-hidden animate-submenu-in"
-          style={{ 
-            zIndex: 9999,
-            ...(menuPosition.openUpward 
-              ? { bottom: `${window.innerHeight - menuPosition.top}px` }
-              : { top: `${menuPosition.top}px` }),
-            left: `${menuPosition.left}px`,
-          }}
-          onMouseEnter={handleSubmenuEnter}
-          onMouseLeave={handleSubmenuLeave}
+          className="ml-2 mt-1 overflow-hidden rounded-2xl border border-sky-100 bg-sky-50/55 p-1.5 shadow-inner animate-submenu-in"
         >
-          <div className="px-4 py-3 border-b border-sidebar-border/50 bg-sky-50/70">
-            <span className="nps-soft-label">{m(label as Parameters<typeof m>[0])}</span>
-          </div>
-          <div className="p-1.5 flex flex-col gap-0.5 max-h-48 overflow-y-auto">
+          <div className="flex max-h-72 flex-col gap-1 overflow-y-auto pr-1">
             {tools.map(tool => {
               const info = TOOL_INFO[tool];
               if (!info) return null;
@@ -334,7 +287,6 @@ const HoverSubmenu = React.memo(function HoverSubmenu({
                   key={tool}
                   onClick={() => {
                     onSelectTool(tool);
-                    setIsOpen(false);
                   }}
                   disabled={!canAfford && info.cost > 0}
                   variant={isSelected ? 'default' : 'ghost'}
@@ -434,21 +386,8 @@ const ActionSubmenu = React.memo(function ActionSubmenu({
 
   const handleButtonClick = useCallback(() => {
     clearCloseTimeout();
-    if (!isOpen && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const spaceBelow = viewportHeight - rect.top;
-      const openUpward = spaceBelow < SUBMENU_MAX_HEIGHT && rect.top > SUBMENU_MAX_HEIGHT;
-
-      setMenuPosition({
-        top: openUpward ? rect.bottom : rect.top,
-        left: rect.right + SUBMENU_GAP,
-        buttonHeight: rect.height,
-        openUpward,
-      });
-    }
-    setIsOpen(true);
-  }, [clearCloseTimeout, isOpen]);
+    setIsOpen(prev => !prev);
+  }, [clearCloseTimeout]);
   
   const handleSubmenuEnter = useCallback(() => {
     clearCloseTimeout();
@@ -470,12 +409,7 @@ const ActionSubmenu = React.memo(function ActionSubmenu({
   }, []);
   
   return (
-    <div 
-      className="relative"
-      onMouseEnter={handleMouseEnter}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-    >
+    <div className="relative">
       <Button
         ref={buttonRef}
         onClick={handleButtonClick}
@@ -495,43 +429,15 @@ const ActionSubmenu = React.memo(function ActionSubmenu({
       
       {isOpen && (
         <div
-          className="fixed"
-          style={{
-            top: `${menuPosition.top}px`,
-            left: `${menuPosition.left - SUBMENU_GAP}px`,
-            width: `${SUBMENU_GAP + 8}px`,
-            height: `${Math.max(menuPosition.buttonHeight, 200)}px`,
-            zIndex: 9998,
-          }}
-          onMouseEnter={handleSubmenuEnter}
-          onMouseLeave={handleSubmenuLeave}
-        />
-      )}
-      
-      {isOpen && (
-        <div 
           ref={submenuRef}
-          className="fixed w-52 nps-glass-panel rounded-2xl overflow-hidden animate-submenu-in"
-          style={{ 
-            zIndex: 9999,
-            ...(menuPosition.openUpward 
-              ? { bottom: `${window.innerHeight - menuPosition.top}px` }
-              : { top: `${menuPosition.top}px` }),
-            left: `${menuPosition.left}px`,
-          }}
-          onMouseEnter={handleSubmenuEnter}
-          onMouseLeave={handleSubmenuLeave}
+          className="ml-2 mt-1 overflow-hidden rounded-2xl border border-sky-100 bg-sky-50/55 p-1.5 shadow-inner animate-submenu-in"
         >
-          <div className="px-4 py-3 border-b border-sidebar-border/50 bg-sky-50/70">
-            <span className="nps-soft-label">{m(label as Parameters<typeof m>[0])}</span>
-          </div>
-          <div className="p-1.5 flex flex-col gap-0.5 max-h-48 overflow-y-auto">
+          <div className="flex max-h-56 flex-col gap-1 overflow-y-auto pr-1">
             {actions.map(action => (
                 <Button
                   key={action.key}
                   onClick={() => {
                     action.onClick();
-                    setIsOpen(false);
                   }}
                 variant="ghost"
                 className="w-full justify-start gap-2 px-3 py-2 h-auto text-sm rounded-xl transition-all duration-150 hover:bg-sky-50"
