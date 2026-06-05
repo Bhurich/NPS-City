@@ -673,15 +673,15 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
     mansion: 0.90, // Same as modern apartment_high scale
   },
   directAssetSrc: {
-    biomass_power_plant: '/assets/nps/biomass-power-plant-2x2-game-asset-transparent.png',
-    solar_farm: '/assets/nps/solar-floating-game-asset-transparent.png',
-    floating_solar: '/assets/nps/solar-floating-game-asset-transparent.png',
-    wood_chipping_plant: '/assets/nps/wood-chipping-facility-game-asset-transparent.png',
-    biomass_plantation: '/assets/nps/eucalyptus-biomass-plantation-game-asset-transparent.png',
-    harvested_plantation: '/assets/nps/harvested-eucalyptus-field-game-asset-transparent.png',
+    biomass_power_plant: '/assets/nps/biomass-power-plant-2x2-game-asset-clean.png',
+    solar_farm: '/assets/nps/solar-floating-game-asset-clean.png',
+    floating_solar: '/assets/nps/solar-floating-game-asset-clean.png',
+    wood_chipping_plant: '/assets/nps/wood-chipping-facility-game-asset-clean.png',
+    biomass_plantation: '/assets/nps/eucalyptus-biomass-plantation-game-asset-clean.png',
+    harvested_plantation: '/assets/nps/harvested-eucalyptus-field-game-asset-clean.png',
   },
   directAssetScales: {
-    biomass_power_plant: 0.9,
+    biomass_power_plant: 0.86,
     solar_farm: 0.72,
     floating_solar: 0.76,
     wood_chipping_plant: 0.82,
@@ -689,7 +689,7 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
     harvested_plantation: 0.72,
   },
   directAssetVerticalOffsets: {
-    biomass_power_plant: -0.15,
+    biomass_power_plant: 0,
     solar_farm: 0.06,
     floating_solar: 0.08,
     wood_chipping_plant: 0,

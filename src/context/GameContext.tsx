@@ -1608,10 +1608,8 @@ export function GameProvider({
       roomCode,
     };
     
-    // Co-op cities load from the room code. Solo cities keep a full local save.
-    if (!roomCode) {
-      saveCityState(state.id, state);
-    }
+    const snapshotState = roomCode ? { ...state, currentRoomCode: roomCode } : state;
+    saveCityState(cityMeta.id, snapshotState);
     
     // Update the index
     setSavedCities((prev) => {

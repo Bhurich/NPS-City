@@ -136,6 +136,7 @@ function loadSavedCities(): SavedCityMeta[] {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
         const normalized = normalizeSavedCities(parsed as SavedCityMeta[]);
+        hydrateMissingCitySnapshots(normalized);
         if (JSON.stringify(normalized) !== JSON.stringify(parsed)) {
           localStorage.setItem(SAVED_CITIES_INDEX_KEY, JSON.stringify(normalized));
         }
@@ -148,16 +149,45 @@ function loadSavedCities(): SavedCityMeta[] {
   return [];
 }
 
+function hydrateMissingCitySnapshots(cities: SavedCityMeta[]): void {
+  try {
+    const activeSave = localStorage.getItem(STORAGE_KEY);
+    const activeState = activeSave ? decodeSavedGameState(activeSave) : null;
+    if (!activeState) return;
+
+    for (const city of cities) {
+      const storageKey = SAVED_CITY_PREFIX + city.id;
+      if (localStorage.getItem(storageKey)) continue;
+
+      const activeRoom = activeState.currentRoomCode?.toUpperCase();
+      const cityRoom = city.roomCode?.toUpperCase();
+      const isSameRoom = Boolean(activeRoom && cityRoom && activeRoom === cityRoom);
+      const isSameLocalCity = !cityRoom && activeState.id === city.id;
+      const isLikelySameSnapshot =
+        activeState.cityName === city.cityName &&
+        activeState.stats?.money === city.money &&
+        activeState.stats?.population === city.population;
+
+      if (isSameRoom || isSameLocalCity || isLikelySameSnapshot) {
+        localStorage.setItem(storageKey, compressToUTF16(JSON.stringify(activeState)));
+      }
+    }
+  } catch {
+    // Snapshot repair should never block the start screen.
+  }
+}
+
 // Save a city to the saved cities index (for multiplayer cities)
 function saveCityToIndex(state: GameState, roomCode?: string): void {
   if (typeof window === 'undefined') return;
   try {
     const normalizedRoomCode = roomCode?.toUpperCase();
     const cities = loadSavedCities();
+    const cityId = normalizedRoomCode ? `coop-${normalizedRoomCode}` : (state.id || `city-${Date.now()}`);
     
     // Create city meta
     const cityMeta: SavedCityMeta = {
-      id: normalizedRoomCode ? `coop-${normalizedRoomCode}` : (state.id || `city-${Date.now()}`),
+      id: cityId,
       cityName: state.cityName || 'Co-op City',
       population: state.stats.population,
       money: state.stats.money,
@@ -179,6 +209,11 @@ function saveCityToIndex(state: GameState, roomCode?: string): void {
       savedAt: Date.now(),
       roomCode: normalizedRoomCode,
     };
+
+    const snapshotState = normalizedRoomCode
+      ? { ...state, currentRoomCode: normalizedRoomCode }
+      : { ...state, id: cityId };
+    localStorage.setItem(SAVED_CITY_PREFIX + cityId, compressToUTF16(JSON.stringify(snapshotState)));
     
     // Check if city already exists (by id or roomCode)
     const existingIndex = cities.findIndex(c => 
@@ -967,6 +1002,21 @@ export default function HomePage() {
   };
 
   const viewSavedCity = async (city: SavedCityMeta) => {
+    try {
+      const saved = localStorage.getItem(SAVED_CITY_PREFIX + city.id);
+      const localState = saved ? decodeSavedGameState(saved) : null;
+      if (localState) {
+        openReadOnlyState({
+          ...localState,
+          cityName: localState.cityName || city.cityName,
+          currentRoomCode: city.roomCode?.toUpperCase() || localState.currentRoomCode,
+        });
+        return;
+      }
+    } catch (e) {
+      console.error('Failed to view local city snapshot:', e);
+    }
+
     if (city.roomCode) {
       const room = await loadGameRoom(city.roomCode);
       if (room?.gameState) {
@@ -979,16 +1029,6 @@ export default function HomePage() {
         return;
       }
     }
-
-    try {
-      const saved = localStorage.getItem(SAVED_CITY_PREFIX + city.id);
-      const localState = saved ? decodeSavedGameState(saved) : null;
-      if (localState) {
-        openReadOnlyState(localState);
-      }
-    } catch (e) {
-      console.error('Failed to view saved city:', e);
-    }
   };
 
   // Delete a saved city from the index
@@ -999,10 +1039,8 @@ export default function HomePage() {
       localStorage.setItem(SAVED_CITIES_INDEX_KEY, JSON.stringify(updatedCities));
       setSavedCities(updatedCities);
       
-      // Also remove the city state data if it exists
-      if (!city.roomCode) {
-        localStorage.removeItem(SAVED_CITY_PREFIX + city.id);
-      }
+      // Also remove the stored snapshot for both local and co-op cities.
+      localStorage.removeItem(SAVED_CITY_PREFIX + city.id);
     } catch {
       console.error('Failed to delete saved city');
     }
@@ -1183,6 +1221,22 @@ export default function HomePage() {
               <LanguageSelector variant="ghost" className="text-white/40 hover:text-white/70 hover:bg-white/10" />
             </div>
           </div>
+
+          {savedCities.length > 0 && (
+            <section className="mt-4 w-full max-w-xs flex-shrink-0">
+              <div className="mb-2 text-sm font-medium text-white/65">เมืองที่บันทึกไว้</div>
+              <div className="max-h-48 overflow-y-auto border border-white/10 bg-white/[0.035]">
+                {savedCities.map((city) => (
+                  <SavedCityCard
+                    key={`${city.id}-${city.roomCode || 'local'}`}
+                    city={city}
+                    onLoad={() => loadSavedCity(city)}
+                    onDelete={() => deleteSavedCity(city)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
           
           {/* Dashboard - read-only city viewer */}
           {savedCities.length > 0 && (
@@ -1255,6 +1309,22 @@ export default function HomePage() {
                 <LanguageSelector variant="ghost" className="text-white/40 hover:text-white/70 hover:bg-white/10" />
               </div>
             </div>
+
+            {savedCities.length > 0 && (
+              <section className="w-64">
+                <div className="mb-2 text-sm font-medium text-white/65">เมืองที่บันทึกไว้</div>
+                <div className="max-h-64 overflow-y-auto border border-white/10 bg-white/[0.035]">
+                  {savedCities.map((city) => (
+                    <SavedCityCard
+                      key={`${city.id}-${city.roomCode || 'local'}`}
+                      city={city}
+                      onLoad={() => loadSavedCity(city)}
+                      onDelete={() => deleteSavedCity(city)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
             </div>
 
             {/* Right - Sprite Gallery */}

@@ -33,8 +33,8 @@ const UI_LABELS = {
   settings: msg('Settings'),
   buildings: msg('Buildings'),
   exitToMainMenu: msg('Exit to Main Menu'),
-  exitDescription: msg('Would you like to save your city before exiting?'),
-  exitWithoutSaving: msg('Exit Without Saving'),
+  exitDescription: msg('Your city will be saved before returning to the main menu.'),
+  exitWithoutSaving: msg('Back'),
   saveAndExit: msg('Save & Exit'),
 };
 import {
@@ -470,6 +470,8 @@ function ExitDialog({
   onExitWithoutSaving: () => void;
 }) {
   const m = useMessages();
+  const locale = useLocale();
+  const isThai = locale?.toLowerCase().startsWith('th');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -477,7 +479,7 @@ function ExitDialog({
         <DialogHeader>
           <DialogTitle>{m(UI_LABELS.exitToMainMenu)}</DialogTitle>
           <DialogDescription>
-            {m(UI_LABELS.exitDescription)}
+            {isThai ? 'ระบบจะบันทึกเมืองให้ก่อนกลับหน้าแรก' : m(UI_LABELS.exitDescription)}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex-col sm:flex-row gap-2">
@@ -486,13 +488,13 @@ function ExitDialog({
             onClick={onExitWithoutSaving}
             className="w-full sm:w-auto"
           >
-            {m(UI_LABELS.exitWithoutSaving)}
+            {isThai ? 'ย้อนกลับ' : m(UI_LABELS.exitWithoutSaving)}
           </Button>
           <Button
             onClick={onSaveAndExit}
             className="w-full sm:w-auto"
           >
-            {m(UI_LABELS.saveAndExit)}
+            {isThai ? 'บันทึกแล้วออก' : m(UI_LABELS.saveAndExit)}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -523,8 +525,7 @@ export const Sidebar = React.memo(function Sidebar({ onExit }: { onExit?: () => 
   
   const handleExitWithoutSaving = useCallback(() => {
     setShowExitDialog(false);
-    onExit?.();
-  }, [onExit]);
+  }, []);
   
   // Direct tool categories (shown inline)
   const directCategories = useMemo(() => ({

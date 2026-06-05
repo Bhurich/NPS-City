@@ -5,6 +5,7 @@ import { useMultiplayerOptional } from '@/context/MultiplayerContext';
 import { useGame } from '@/context/GameContext';
 import { GameAction, GameActionInput } from '@/lib/multiplayer/types';
 import { Tool, Budget, GameState, SavedCityMeta } from '@/types/game';
+import { compressToUTF16 } from 'lz-string';
 
 // Batch placement buffer for reducing message count during drags
 const BATCH_FLUSH_INTERVAL = 100; // ms - flush every 100ms during drag
@@ -12,6 +13,7 @@ const BATCH_MAX_SIZE = 100; // Max placements before force flush
 
 // Storage key for saved cities index (matches page.tsx)
 const SAVED_CITIES_INDEX_KEY = 'isocity-saved-cities-index';
+const SAVED_CITY_PREFIX = 'isocity-city-';
 
 // Update the saved cities index with the current multiplayer city state
 function updateSavedCitiesIndex(state: GameState, roomCode: string): void {
@@ -46,6 +48,11 @@ function updateSavedCitiesIndex(state: GameState, roomCode: string): void {
       savedAt: Date.now(),
       roomCode: normalizedRoomCode,
     };
+
+    localStorage.setItem(
+      SAVED_CITY_PREFIX + cityMeta.id,
+      compressToUTF16(JSON.stringify({ ...state, currentRoomCode: normalizedRoomCode }))
+    );
     
     // Find and update or add
     const existingIndex = cities.findIndex(c => c.roomCode === normalizedRoomCode || c.id === cityMeta.id);

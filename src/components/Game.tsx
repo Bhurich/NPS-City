@@ -234,7 +234,7 @@ function ViewerControls({ onExit }: { onExit?: () => void }) {
 export default function Game({ onExit, viewerMode = false }: { onExit?: () => void; viewerMode?: boolean }) {
   const gt = useGT();
   const m = useMessages();
-  const { state, isReadOnly, setTool, setActivePanel, addMoney, addNotification, setSpeed, createStarterCity } = useGame();
+  const { state, isReadOnly, setTool, setActivePanel, addMoney, addNotification, setSpeed, createStarterCity, saveCity } = useGame();
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('none');
   const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
   const [showStarterGuide, setShowStarterGuide] = useState(() => {
@@ -427,6 +427,13 @@ export default function Game({ onExit, viewerMode = false }: { onExit?: () => vo
     }
   }, [addMoney, addNotification, gt, m, isReadOnly]);
 
+  const handleSafeExit = useCallback(() => {
+    if (!isReadOnly) {
+      saveCity();
+    }
+    onExit?.();
+  }, [isReadOnly, onExit, saveCity]);
+
   if (viewerMode || isReadOnly) {
     return (
       <TooltipProvider>
@@ -460,7 +467,7 @@ export default function Game({ onExit, viewerMode = false }: { onExit?: () => vo
             services={state.services}
             onCloseTile={() => setSelectedTile(null)}
             onShare={() => setShowShareModal(true)}
-            onExit={onExit}
+            onExit={handleSafeExit}
           />
           
           {/* Share Modal for mobile co-op */}

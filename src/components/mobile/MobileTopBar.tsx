@@ -2,6 +2,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { msg, useMessages } from 'gt-next';
+import { useLocale } from 'gt-next/client';
 import { useGame } from '@/context/GameContext';
 import { Tile } from '@/types/game';
 import { Button } from '@/components/ui/button';
@@ -56,8 +57,8 @@ const UI_LABELS = {
   weeklyNet: msg('Weekly Net'),
   exitToMainMenu: msg('Exit to Main Menu'),
   exitDialogTitle: msg('Exit to Main Menu'),
-  exitDialogDescription: msg('Would you like to save your city before exiting?'),
-  exitWithoutSaving: msg('Exit Without Saving'),
+  exitDialogDescription: msg('Your city will be saved before returning to the main menu.'),
+  exitWithoutSaving: msg('Back'),
   saveAndExit: msg('Save & Exit'),
   zone: msg('Zone'),
 };
@@ -125,6 +126,8 @@ export function MobileTopBar({
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [showTaxSlider, setShowTaxSlider] = useState(false);
   const m = useMessages();
+  const locale = useLocale();
+  const isThai = locale?.toLowerCase().startsWith('th');
 
   const handleSaveAndExit = useCallback(() => {
     saveCity();
@@ -134,8 +137,7 @@ export function MobileTopBar({
 
   const handleExitWithoutSaving = useCallback(() => {
     setShowExitDialog(false);
-    onExit?.();
-  }, [onExit]);
+  }, []);
 
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -480,7 +482,7 @@ export function MobileTopBar({
           <DialogHeader>
             <DialogTitle>{m(UI_LABELS.exitDialogTitle)}</DialogTitle>
             <DialogDescription>
-              {m(UI_LABELS.exitDialogDescription)}
+              {isThai ? 'ระบบจะบันทึกเมืองให้ก่อนกลับหน้าแรก' : m(UI_LABELS.exitDialogDescription)}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex-col sm:flex-row gap-2">
@@ -489,13 +491,13 @@ export function MobileTopBar({
               onClick={handleExitWithoutSaving}
               className="w-full sm:w-auto"
             >
-              {m(UI_LABELS.exitWithoutSaving)}
+              {isThai ? 'ย้อนกลับ' : m(UI_LABELS.exitWithoutSaving)}
             </Button>
             <Button
               onClick={handleSaveAndExit}
               className="w-full sm:w-auto"
             >
-              {m(UI_LABELS.saveAndExit)}
+              {isThai ? 'บันทึกแล้วออก' : m(UI_LABELS.saveAndExit)}
             </Button>
           </DialogFooter>
         </DialogContent>
