@@ -1560,8 +1560,9 @@ export function GameProvider({
   // Save current city to the multi-save system
   const saveCity = useCallback(() => {
     if (readOnlyRef.current) return;
+    const roomCode = state.currentRoomCode?.toUpperCase();
     const cityMeta: SavedCityMeta = {
-      id: state.id,
+      id: roomCode ? `coop-${roomCode}` : state.id,
       cityName: state.cityName,
       population: state.stats.population,
       money: state.stats.money,
@@ -1569,15 +1570,18 @@ export function GameProvider({
       month: state.month,
       gridSize: state.gridSize,
       savedAt: Date.now(),
+      roomCode,
     };
     
-    // Save the city state
-    saveCityState(state.id, state);
+    // Co-op cities load from the room code. Solo cities keep a full local save.
+    if (!roomCode) {
+      saveCityState(state.id, state);
+    }
     
     // Update the index
     setSavedCities((prev) => {
       // Check if this city already exists in the list
-      const existingIndex = prev.findIndex((c) => c.id === state.id);
+      const existingIndex = prev.findIndex((c) => c.id === cityMeta.id || (roomCode && c.roomCode === roomCode));
       let newCities: SavedCityMeta[];
       
       if (existingIndex >= 0) {

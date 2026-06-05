@@ -135,7 +135,11 @@ function loadSavedCities(): SavedCityMeta[] {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        return parsed as SavedCityMeta[];
+        const normalized = normalizeSavedCities(parsed as SavedCityMeta[]);
+        if (JSON.stringify(normalized) !== JSON.stringify(parsed)) {
+          localStorage.setItem(SAVED_CITIES_INDEX_KEY, JSON.stringify(normalized));
+        }
+        return normalized;
       }
     }
   } catch {
@@ -148,11 +152,12 @@ function loadSavedCities(): SavedCityMeta[] {
 function saveCityToIndex(state: GameState, roomCode?: string): void {
   if (typeof window === 'undefined') return;
   try {
+    const normalizedRoomCode = roomCode?.toUpperCase();
     const cities = loadSavedCities();
     
     // Create city meta
     const cityMeta: SavedCityMeta = {
-      id: state.id || `city-${Date.now()}`,
+      id: normalizedRoomCode ? `coop-${normalizedRoomCode}` : (state.id || `city-${Date.now()}`),
       cityName: state.cityName || 'Co-op City',
       population: state.stats.population,
       money: state.stats.money,
@@ -160,12 +165,12 @@ function saveCityToIndex(state: GameState, roomCode?: string): void {
       month: state.month,
       gridSize: state.gridSize,
       savedAt: Date.now(),
-      roomCode: roomCode,
+      roomCode: normalizedRoomCode,
     };
     
     // Check if city already exists (by id or roomCode)
     const existingIndex = cities.findIndex(c => 
-      c.id === cityMeta.id || (roomCode && c.roomCode === roomCode)
+      c.id === cityMeta.id || (normalizedRoomCode && c.roomCode === normalizedRoomCode)
     );
     
     if (existingIndex >= 0) {
@@ -177,12 +182,57 @@ function saveCityToIndex(state: GameState, roomCode?: string): void {
     }
     
     // Keep only the last 20 cities
-    const trimmed = cities.slice(0, 20);
+    const trimmed = normalizeSavedCities(cities).slice(0, 20);
     
     localStorage.setItem(SAVED_CITIES_INDEX_KEY, JSON.stringify(trimmed));
   } catch (e) {
     console.error('Failed to save city to index:', e);
   }
+}
+
+function normalizeSavedCities(cities: SavedCityMeta[]): SavedCityMeta[] {
+  const latestByKey = new Map<string, SavedCityMeta>();
+  const coopSnapshots = new Set<string>();
+  const localBySnapshot = new Map<string, SavedCityMeta>();
+
+  for (const city of cities) {
+    const snapshotKey = `${city.population}:${city.money}:${city.gridSize}`;
+    if (city.roomCode) {
+      coopSnapshots.add(snapshotKey);
+    } else {
+      const existing = localBySnapshot.get(snapshotKey);
+      if (!existing || city.savedAt > existing.savedAt) {
+        localBySnapshot.set(snapshotKey, city);
+      }
+    }
+  }
+
+  for (const city of cities) {
+    const snapshotKey = `${city.population}:${city.money}:${city.gridSize}`;
+    const isDuplicateLocalCoopSnapshot = !city.roomCode && coopSnapshots.has(snapshotKey);
+    if (isDuplicateLocalCoopSnapshot) continue;
+
+    const roomCode = city.roomCode?.toUpperCase();
+    const key = roomCode ? `coop-${roomCode}` : city.id;
+    const duplicateLocalCity = roomCode ? localBySnapshot.get(snapshotKey) : undefined;
+    const shouldUseLocalName =
+      duplicateLocalCity &&
+      ['NPS City', 'Co-op City', 'เมืองของทีม'].includes(city.cityName);
+    const normalizedCity = roomCode
+      ? {
+          ...city,
+          id: `coop-${roomCode}`,
+          cityName: shouldUseLocalName ? duplicateLocalCity.cityName : city.cityName,
+          roomCode,
+        }
+      : city;
+    const existing = latestByKey.get(key);
+    if (!existing || normalizedCity.savedAt > existing.savedAt) {
+      latestByKey.set(key, normalizedCity);
+    }
+  }
+
+  return Array.from(latestByKey.values()).sort((a, b) => b.savedAt - a.savedAt);
 }
 
 // Sprite Gallery component that renders sprites using canvas (like SpriteTestPanel)
@@ -792,12 +842,13 @@ export default function HomePage() {
     if (isHost && initialState) {
       // Host starts with the state they created - save it so GameProvider loads it
       try {
-        const compressed = compressToUTF16(JSON.stringify(initialState));
+        const stateWithRoom = roomCode ? { ...initialState, currentRoomCode: roomCode.toUpperCase() } : initialState;
+        const compressed = compressToUTF16(JSON.stringify(stateWithRoom));
         localStorage.setItem(STORAGE_KEY, compressed);
         
         // Also save to saved cities index so it appears on homepage
         if (roomCode) {
-          saveCityToIndex(initialState, roomCode);
+          saveCityToIndex(stateWithRoom, roomCode);
         }
       } catch (e) {
         console.error('Failed to save co-op state:', e);
@@ -809,12 +860,13 @@ export default function HomePage() {
     } else if (initialState) {
       // Guest received state from host - save it so GameProvider loads it
       try {
-        const compressed = compressToUTF16(JSON.stringify(initialState));
+        const stateWithRoom = roomCode ? { ...initialState, currentRoomCode: roomCode.toUpperCase() } : initialState;
+        const compressed = compressToUTF16(JSON.stringify(stateWithRoom));
         localStorage.setItem(STORAGE_KEY, compressed);
         
         // Also save to saved cities index so it appears on homepage
         if (roomCode) {
-          saveCityToIndex(initialState, roomCode);
+          saveCityToIndex(stateWithRoom, roomCode);
         }
       } catch (e) {
         console.error('Failed to save co-op state:', e);

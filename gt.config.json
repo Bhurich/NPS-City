@@ -2,15 +2,7 @@
   "$schema": "https://assets.gtx.dev/config-schema.json",
   "locales": [
     "en",
-    "th",
-    "es",
-    "zh",
-    "ja",
-    "fr",
-    "de",
-    "pt-BR",
-    "it",
-    "tr"
+    "th"
   ],
   "defaultLocale": "en",
   "files": {

@@ -174,6 +174,7 @@ export interface GameState {
   gameVersion: number;
   cities: City[];
   npsChallenge?: NpsChallengeState;
+  currentRoomCode?: string;
 }
 
 export interface SavedCityMeta {

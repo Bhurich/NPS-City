@@ -17,13 +17,14 @@ const SAVED_CITIES_INDEX_KEY = 'isocity-saved-cities-index';
 function updateSavedCitiesIndex(state: GameState, roomCode: string): void {
   if (typeof window === 'undefined') return;
   try {
+    const normalizedRoomCode = roomCode.toUpperCase();
     // Load existing cities
     const saved = localStorage.getItem(SAVED_CITIES_INDEX_KEY);
     const cities: SavedCityMeta[] = saved ? JSON.parse(saved) : [];
     
     // Create updated city meta
     const cityMeta: SavedCityMeta = {
-      id: state.id || `city-${Date.now()}`,
+      id: `coop-${normalizedRoomCode}`,
       cityName: state.cityName || 'Co-op City',
       population: state.stats.population,
       money: state.stats.money,
@@ -31,11 +32,11 @@ function updateSavedCitiesIndex(state: GameState, roomCode: string): void {
       month: state.month,
       gridSize: state.gridSize,
       savedAt: Date.now(),
-      roomCode: roomCode,
+      roomCode: normalizedRoomCode,
     };
     
     // Find and update or add
-    const existingIndex = cities.findIndex(c => c.roomCode === roomCode);
+    const existingIndex = cities.findIndex(c => c.roomCode === normalizedRoomCode || c.id === cityMeta.id);
     if (existingIndex >= 0) {
       cities[existingIndex] = cityMeta;
     } else {
@@ -276,12 +277,15 @@ export function useMultiplayerSync() {
     lastUpdateRef.current = now;
     
     // Update the game state - provider will save to Supabase database (throttled)
-    multiplayer.updateGameState(game.state);
+    const stateWithRoom: GameState = multiplayer.roomCode
+      ? { ...game.state, currentRoomCode: multiplayer.roomCode.toUpperCase() }
+      : game.state;
+    multiplayer.updateGameState(stateWithRoom);
     
     // Also update the local saved cities index (less frequently - every 10 seconds)
     if (multiplayer.roomCode && now - lastIndexUpdateRef.current > 10000) {
       lastIndexUpdateRef.current = now;
-      updateSavedCitiesIndex(game.state, multiplayer.roomCode);
+      updateSavedCitiesIndex(stateWithRoom, multiplayer.roomCode);
     }
   }, [multiplayer, game.state]);
 

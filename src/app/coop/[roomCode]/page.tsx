@@ -16,11 +16,12 @@ const SAVED_CITIES_INDEX_KEY = 'isocity-saved-cities-index';
 function saveCityToIndex(state: GameState, roomCode?: string): void {
   if (typeof window === 'undefined') return;
   try {
+    const normalizedRoomCode = roomCode?.toUpperCase();
     const saved = localStorage.getItem(SAVED_CITIES_INDEX_KEY);
     const cities = saved ? JSON.parse(saved) : [];
     
     const cityMeta = {
-      id: state.id || `city-${Date.now()}`,
+      id: normalizedRoomCode ? `coop-${normalizedRoomCode}` : (state.id || `city-${Date.now()}`),
       cityName: state.cityName || 'Co-op City',
       population: state.stats.population,
       money: state.stats.money,
@@ -28,11 +29,11 @@ function saveCityToIndex(state: GameState, roomCode?: string): void {
       month: state.month,
       gridSize: state.gridSize,
       savedAt: Date.now(),
-      roomCode: roomCode,
+      roomCode: normalizedRoomCode,
     };
     
     const existingIndex = cities.findIndex((c: { id: string; roomCode?: string }) => 
-      c.id === cityMeta.id || (roomCode && c.roomCode === roomCode)
+      c.id === cityMeta.id || (normalizedRoomCode && c.roomCode === normalizedRoomCode)
     );
     
     if (existingIndex >= 0) {
@@ -71,10 +72,11 @@ export default function CoopPage() {
     
     if (isHost && initialState) {
       try {
-        const compressed = compressToUTF16(JSON.stringify(initialState));
+        const stateWithRoom = code ? { ...initialState, currentRoomCode: code.toUpperCase() } : initialState;
+        const compressed = compressToUTF16(JSON.stringify(stateWithRoom));
         localStorage.setItem(STORAGE_KEY, compressed);
         if (code) {
-          saveCityToIndex(initialState, code);
+          saveCityToIndex(stateWithRoom, code);
         }
       } catch (e) {
         console.error('Failed to save co-op state:', e);
@@ -84,10 +86,11 @@ export default function CoopPage() {
       setStartFreshGame(true);
     } else if (initialState) {
       try {
-        const compressed = compressToUTF16(JSON.stringify(initialState));
+        const stateWithRoom = code ? { ...initialState, currentRoomCode: code.toUpperCase() } : initialState;
+        const compressed = compressToUTF16(JSON.stringify(stateWithRoom));
         localStorage.setItem(STORAGE_KEY, compressed);
         if (code) {
-          saveCityToIndex(initialState, code);
+          saveCityToIndex(stateWithRoom, code);
         }
       } catch (e) {
         console.error('Failed to save co-op state:', e);
