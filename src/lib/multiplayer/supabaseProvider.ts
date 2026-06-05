@@ -105,8 +105,9 @@ export class MultiplayerProvider {
           this.gameState
         );
         if (!success) {
-          this.options.onError?.(msg('Failed to create room in database'));
-          throw new Error(msg('Failed to create room in database'));
+          const errorMessage = msg('สร้างห้อง Co-op ไม่สำเร็จ กรุณาตรวจสอบว่ารันไฟล์ supabase/game_rooms.sql ใน Supabase แล้ว');
+          this.options.onError?.(errorMessage);
+          throw new Error(errorMessage);
         }
       } catch (e) {
         if (e instanceof CitySizeLimitError) {
