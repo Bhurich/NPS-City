@@ -702,7 +702,11 @@ export function GameProvider({
   useEffect(() => {
     readOnlyRef.current = readOnly;
     if (readOnly) {
-      setState((prev) => (prev.speed === 0 ? prev : { ...prev, speed: 0, selectedTool: 'select' }));
+      setState((prev) => (
+        prev.selectedTool === 'select' && prev.activePanel === 'none'
+          ? prev
+          : { ...prev, selectedTool: 'select', activePanel: 'none' }
+      ));
     }
   }, [readOnly]);
   
@@ -843,7 +847,7 @@ export function GameProvider({
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
 
-    if (!readOnly && state.speed > 0) {
+    if (state.speed > 0) {
       // Check if running on mobile for performance optimization
       const isMobileDevice = typeof window !== 'undefined' && (
         window.innerWidth < 768 ||
@@ -881,7 +885,7 @@ export function GameProvider({
         clearInterval(timer);
       }
     };
-  }, [state.speed, readOnly]);
+  }, [state.speed]);
 
   const setTool = useCallback((tool: Tool) => {
     if (readOnlyRef.current && tool !== 'select') return;
@@ -889,7 +893,6 @@ export function GameProvider({
   }, []);
 
   const setSpeed = useCallback((speed: 0 | 1 | 2 | 3) => {
-    if (readOnlyRef.current) return;
     setState((prev) => ({ ...prev, speed }));
   }, []);
 
@@ -1566,6 +1569,13 @@ export function GameProvider({
       cityName: state.cityName,
       population: state.stats.population,
       money: state.stats.money,
+      happiness: state.stats.happiness,
+      environment: state.stats.environment,
+      health: state.stats.health,
+      education: state.stats.education,
+      safety: state.stats.safety,
+      income: state.stats.income,
+      expenses: state.stats.expenses,
       year: state.year,
       month: state.month,
       gridSize: state.gridSize,

@@ -182,6 +182,13 @@ export interface SavedCityMeta {
   cityName: string;
   population: number;
   money: number;
+  happiness?: number;
+  environment?: number;
+  health?: number;
+  education?: number;
+  safety?: number;
+  income?: number;
+  expenses?: number;
   year: number;
   month: number;
   gridSize: number;

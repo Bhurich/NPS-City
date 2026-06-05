@@ -26,7 +26,7 @@ import { useMultiplayerSync } from '@/hooks/useMultiplayerSync';
 import { useCopyRoomLink } from '@/hooks/useCopyRoomLink';
 import { useMultiplayerOptional } from '@/context/MultiplayerContext';
 import { ShareModal } from '@/components/multiplayer/ShareModal';
-import { Check, Copy, HelpCircle, Trophy, Zap } from 'lucide-react';
+import { Check, Copy, HelpCircle, Pause, Play, Trophy, Zap } from 'lucide-react';
 
 // Import game components
 import { OverlayMode } from '@/components/game/types';
@@ -189,7 +189,48 @@ function PowerPlantQuestionDialog({
   );
 }
 
-export default function Game({ onExit }: { onExit?: () => void }) {
+function ViewerControls({ onExit }: { onExit?: () => void }) {
+  const { state, setSpeed } = useGame();
+  const speeds: Array<0 | 1 | 2 | 3> = [0, 1, 2, 3];
+
+  return (
+    <div className="absolute left-4 top-4 z-30 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-2 rounded-[26px] border border-white/70 bg-white/88 px-3 py-2 text-slate-700 shadow-[0_18px_50px_rgba(72,117,160,0.18)] backdrop-blur-xl">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={onExit}
+        className="rounded-full px-3 text-slate-600 hover:bg-sky-50 hover:text-sky-700"
+      >
+        กลับ
+      </Button>
+      <div className="h-6 w-px bg-slate-200" />
+      <div className="min-w-0 px-1">
+        <div className="truncate text-sm font-semibold text-slate-800">{state.cityName || 'เมืองตัวอย่าง'}</div>
+        <div className="text-[11px] text-slate-500">โหมดดูเมืองเท่านั้น</div>
+      </div>
+      <div className="ml-0 flex rounded-full bg-sky-50 p-1 sm:ml-1">
+        {speeds.map((speed) => (
+          <button
+            key={speed}
+            type="button"
+            onClick={() => setSpeed(speed)}
+            className={`flex h-8 min-w-8 items-center justify-center rounded-full px-2 text-xs font-semibold transition ${
+              state.speed === speed
+                ? 'bg-sky-500 text-white shadow-sm'
+                : 'text-slate-500 hover:bg-white hover:text-sky-700'
+            }`}
+            aria-label={speed === 0 ? 'Pause city preview' : `Run city preview speed ${speed}`}
+          >
+            {speed === 0 ? <Pause className="h-3.5 w-3.5" /> : speed === 1 ? <Play className="h-3.5 w-3.5" /> : `${speed}x`}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function Game({ onExit, viewerMode = false }: { onExit?: () => void; viewerMode?: boolean }) {
   const gt = useGT();
   const m = useMessages();
   const { state, isReadOnly, setTool, setActivePanel, addMoney, addNotification, setSpeed, createStarterCity } = useGame();
@@ -384,6 +425,22 @@ export default function Game({ onExit }: { onExit?: () => void }) {
       );
     }
   }, [addMoney, addNotification, gt, m, isReadOnly]);
+
+  if (viewerMode || isReadOnly) {
+    return (
+      <TooltipProvider>
+        <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-sky-50 via-cyan-50 to-emerald-50">
+          <CanvasIsometricGrid
+            overlayMode="none"
+            selectedTile={null}
+            setSelectedTile={() => {}}
+            onBargeDelivery={() => {}}
+          />
+          <ViewerControls onExit={onExit} />
+        </div>
+      </TooltipProvider>
+    );
+  }
 
   const readOnlyBadge = isReadOnly ? (
     <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 rounded-full border border-sky-200 bg-white/90 px-4 py-2 text-sm font-medium text-slate-700 shadow-[0_12px_32px_rgba(79,128,166,0.18)] backdrop-blur">

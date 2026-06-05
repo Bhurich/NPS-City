@@ -18,7 +18,7 @@ import Game from '@/components/Game';
 import { CoopModal } from '@/components/multiplayer/CoopModal';
 import { useMobile } from '@/hooks/useMobile';
 import { getSpritePack, getSpriteCoords, DEFAULT_SPRITE_PACK_ID } from '@/lib/renderConfig';
-import { createStarterCityState, DEFAULT_GRID_SIZE } from '@/lib/simulation';
+import { loadGameRoom } from '@/lib/multiplayer/database';
 import { SavedCityMeta, GameState } from '@/types/game';
 import { decompressFromUTF16, compressToUTF16 } from 'lz-string';
 import { LanguageSelector } from '@/components/ui/LanguageSelector';
@@ -161,6 +161,13 @@ function saveCityToIndex(state: GameState, roomCode?: string): void {
       cityName: state.cityName || 'Co-op City',
       population: state.stats.population,
       money: state.stats.money,
+      happiness: state.stats.happiness,
+      environment: state.stats.environment,
+      health: state.stats.health,
+      education: state.stats.education,
+      safety: state.stats.safety,
+      income: state.stats.income,
+      expenses: state.stats.expenses,
       year: state.year,
       month: state.month,
       gridSize: state.gridSize,
@@ -393,6 +400,103 @@ function SavedCityCard({ city, onLoad, onDelete }: { city: SavedCityMeta; onLoad
         </button>
       )}
     </div>
+  );
+}
+
+function formatCurrency(value: number) {
+  return `$${Math.round(value).toLocaleString()}`;
+}
+
+function percentValue(value: number | undefined) {
+  return Math.round(value ?? 0);
+}
+
+function CityDashboard({
+  cities,
+  onView,
+  compact = false,
+}: {
+  cities: SavedCityMeta[];
+  onView: (city: SavedCityMeta) => void;
+  compact?: boolean;
+}) {
+  const rankedByMoney = [...cities].sort((a, b) => b.money - a.money);
+  const rankedByHappiness = [...cities].sort((a, b) => percentValue(b.happiness) - percentValue(a.happiness));
+  const bestMoney = rankedByMoney[0];
+  const bestHappiness = rankedByHappiness[0];
+  const avgEnvironment = cities.length
+    ? Math.round(cities.reduce((sum, city) => sum + percentValue(city.environment), 0) / cities.length)
+    : 0;
+
+  return (
+    <section className={`${compact ? 'w-full max-w-xs' : 'w-full max-w-5xl'} rounded-[32px] border border-white/10 bg-white/[0.055] p-4 text-white/80 shadow-[0_24px_80px_rgba(0,0,0,0.22)] backdrop-blur-xl`}>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-white">Dashboard เมือง</h2>
+          <p className="mt-1 text-xs text-white/45">ดูอันดับเมืองและเข้าไปชมเมืองแบบแก้ไขไม่ได้</p>
+        </div>
+        <div className="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1 text-xs text-cyan-100">
+          {cities.length} เมือง
+        </div>
+      </div>
+
+      <div className={`mt-4 grid gap-3 ${compact ? 'grid-cols-1' : 'sm:grid-cols-3'}`}>
+        <div className="rounded-[24px] border border-white/10 bg-white/[0.06] p-3">
+          <div className="text-xs text-white/45">เงินสูงสุด</div>
+          <div className="mt-1 text-xl font-semibold text-emerald-300">{bestMoney ? formatCurrency(bestMoney.money) : '-'}</div>
+          <div className="mt-1 truncate text-xs text-white/50">{bestMoney?.cityName || '-'}</div>
+        </div>
+        <div className="rounded-[24px] border border-white/10 bg-white/[0.06] p-3">
+          <div className="text-xs text-white/45">ความสุขสูงสุด</div>
+          <div className="mt-1 text-xl font-semibold text-amber-200">{bestHappiness ? `${percentValue(bestHappiness.happiness)}%` : '-'}</div>
+          <div className="mt-1 truncate text-xs text-white/50">{bestHappiness?.cityName || '-'}</div>
+        </div>
+        <div className="rounded-[24px] border border-white/10 bg-white/[0.06] p-3">
+          <div className="text-xs text-white/45">สิ่งแวดล้อมเฉลี่ย</div>
+          <div className="mt-1 text-xl font-semibold text-sky-200">{avgEnvironment}%</div>
+          <div className="mt-1 text-xs text-white/50">ใช้ดูสมดุลเมืองโดยรวม</div>
+        </div>
+      </div>
+
+      <div className="mt-4 overflow-hidden rounded-[24px] border border-white/10">
+        <div className="grid grid-cols-[1fr_auto] gap-2 bg-white/[0.06] px-3 py-2 text-xs uppercase tracking-wide text-white/45 sm:grid-cols-[1.3fr_.8fr_.7fr_.7fr_.7fr_auto]">
+          <span>เมือง</span>
+          <span className="hidden sm:block">เงิน</span>
+          <span className="hidden sm:block">สุข</span>
+          <span className="hidden sm:block">สิ่งแวดล้อม</span>
+          <span className="hidden sm:block">รหัส</span>
+          <span>ดู</span>
+        </div>
+        <div className="max-h-72 overflow-y-auto">
+          {rankedByMoney.map((city) => (
+            <div
+              key={`${city.id}-${city.roomCode || 'local'}`}
+              className="grid grid-cols-[1fr_auto] items-center gap-2 border-t border-white/10 px-3 py-3 text-sm sm:grid-cols-[1.3fr_.8fr_.7fr_.7fr_.7fr_auto]"
+            >
+              <div className="min-w-0">
+                <div className="truncate font-medium text-white/90">{city.cityName}</div>
+                <div className="mt-1 text-xs text-white/40 sm:hidden">
+                  {formatCurrency(city.money)} · สุข {percentValue(city.happiness)}% · สิ่งแวดล้อม {percentValue(city.environment)}%
+                </div>
+              </div>
+              <div className="hidden text-emerald-300 sm:block">{formatCurrency(city.money)}</div>
+              <div className="hidden text-amber-200 sm:block">{percentValue(city.happiness)}%</div>
+              <div className="hidden text-sky-200 sm:block">{percentValue(city.environment)}%</div>
+              <div className="hidden font-mono text-blue-300/80 sm:block">{city.roomCode || '-'}</div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onView(city)}
+                className="rounded-full border-white/15 bg-white/[0.04] px-3 text-white/70 hover:bg-white/15 hover:text-white"
+              >
+                ดูเมือง
+              </Button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -815,6 +919,51 @@ export default function HomePage() {
     }
   };
 
+  const openReadOnlyState = (state: GameState) => {
+    try {
+      const viewerState: GameState = {
+        ...state,
+        speed: 0,
+        selectedTool: 'select',
+        activePanel: 'none',
+      };
+      const compressed = compressToUTF16(JSON.stringify(viewerState));
+      localStorage.setItem(READ_ONLY_EXAMPLE_STORAGE_KEY, compressed);
+      localStorage.setItem(READ_ONLY_VIEW_STORAGE_KEY, 'true');
+      setIsMultiplayer(false);
+      setStartFreshGame(false);
+      setReadOnlyMode(true);
+      setShowGame(true);
+    } catch (e) {
+      console.error('Failed to open read-only city:', e);
+    }
+  };
+
+  const viewSavedCity = async (city: SavedCityMeta) => {
+    if (city.roomCode) {
+      const room = await loadGameRoom(city.roomCode);
+      if (room?.gameState) {
+        const roomState = room.gameState as GameState;
+        openReadOnlyState({
+          ...roomState,
+          cityName: room.cityName || roomState.cityName || city.cityName,
+          currentRoomCode: city.roomCode.toUpperCase(),
+        });
+        return;
+      }
+    }
+
+    try {
+      const saved = localStorage.getItem(SAVED_CITY_PREFIX + city.id);
+      const localState = saved ? decodeSavedGameState(saved) : null;
+      if (localState) {
+        openReadOnlyState(localState);
+      }
+    } catch (e) {
+      console.error('Failed to view saved city:', e);
+    }
+  };
+
   // Delete a saved city from the index
   const deleteSavedCity = (city: SavedCityMeta) => {
     try {
@@ -901,13 +1050,15 @@ export default function HomePage() {
       setPendingRoomCode(null);
     }
 
-    const exampleState = createStarterCityState(DEFAULT_GRID_SIZE, 'เมืองตัวอย่าง', { speed: 0 });
-
     try {
+      const response = await fetch('/example-states/example_state_9.json');
+      const exampleState = (await response.json()) as GameState;
       const compressed = compressToUTF16(JSON.stringify({
         ...exampleState,
+        cityName: 'เมืองตัวอย่าง',
         speed: 0,
         selectedTool: 'select',
+        activePanel: 'none',
       }));
       localStorage.setItem(READ_ONLY_EXAMPLE_STORAGE_KEY, compressed);
       localStorage.setItem(READ_ONLY_VIEW_STORAGE_KEY, 'true');
@@ -932,7 +1083,7 @@ export default function HomePage() {
   if (showGame) {
     const gameContent = (
       <main className="h-screen w-screen overflow-hidden">
-        <Game onExit={handleExitGame} />
+        <Game onExit={handleExitGame} viewerMode={readOnlyMode} />
       </main>
     );
 
@@ -1006,25 +1157,10 @@ export default function HomePage() {
             </div>
           </div>
           
-          {/* Saved Cities - scrollable area takes remaining space */}
+          {/* Dashboard - read-only city viewer */}
           {savedCities.length > 0 && (
-            <div className="w-full max-w-xs mt-3 sm:mt-4 flex-1 min-h-0 flex flex-col">
-              <h2 className="text-xs font-medium text-white/40 uppercase tracking-wider mb-2 flex-shrink-0">
-                <T>Saved Cities</T>
-              </h2>
-              <div 
-                className="flex flex-col gap-2 flex-1 overflow-y-auto overscroll-y-contain"
-                style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
-              >
-                {savedCities.slice(0, 5).map((city) => (
-                  <SavedCityCard
-                    key={city.id}
-                    city={city}
-                    onLoad={() => loadSavedCity(city)}
-                    onDelete={() => deleteSavedCity(city)}
-                  />
-                ))}
-              </div>
+            <div className="mt-3 w-full flex-1">
+              <CityDashboard cities={savedCities} onView={viewSavedCity} compact />
             </div>
           )}
           
@@ -1048,10 +1184,10 @@ export default function HomePage() {
   return (
     <MultiplayerContextProvider>
       <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-8">
-        <div className="max-w-7xl w-full grid lg:grid-cols-2 gap-16 items-center">
-          
-          {/* Left - Title and Start Button */}
-          <div className="flex flex-col items-center lg:items-start justify-center space-y-12">
+        <div className="max-w-7xl w-full space-y-8">
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+            {/* Left - Title and Start Button */}
+            <div className="flex flex-col items-center lg:items-start justify-center space-y-12">
             <h1 className="text-8xl font-light tracking-wider text-white/90">
               NPS City
             </h1>
@@ -1092,34 +1228,18 @@ export default function HomePage() {
                 <LanguageSelector variant="ghost" className="text-white/40 hover:text-white/70 hover:bg-white/10" />
               </div>
             </div>
-            
-            {/* Saved Cities */}
-            {savedCities.length > 0 && (
-              <div className="w-64">
-                <h2 className="text-xs font-medium text-white/40 uppercase tracking-wider mb-2">
-                  <T>Saved Cities</T>
-                </h2>
-                <div 
-                  className="flex flex-col gap-2 max-h-64 overflow-y-auto overscroll-y-contain"
-                  style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
-                >
-                  {savedCities.slice(0, 5).map((city) => (
-                    <SavedCityCard
-                      key={city.id}
-                      city={city}
-                      onLoad={() => loadSavedCity(city)}
-                      onDelete={() => deleteSavedCity(city)}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+            </div>
+
+            {/* Right - Sprite Gallery */}
+            <div className="flex justify-center lg:justify-end">
+              <SpriteGallery count={16} />
+            </div>
           </div>
 
-          {/* Right - Sprite Gallery */}
-          <div className="flex justify-center lg:justify-end">
-            <SpriteGallery count={16} />
-          </div>
+          {/* Dashboard */}
+          {savedCities.length > 0 && (
+            <CityDashboard cities={savedCities} onView={viewSavedCity} />
+          )}
         </div>
         
         {/* Co-op Modal */}
