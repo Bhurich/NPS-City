@@ -12,9 +12,9 @@
 
 @layer base {
   :root {
-    /* Bright civic color palette */
-    --background: 205 45% 96%;
-    --foreground: 220 28% 16%;
+    /* Soft playful civic palette */
+    --background: 205 72% 97%;
+    --foreground: 224 34% 18%;
     
     --card: 0 0% 100%;
     --card-foreground: 220 28% 16%;
@@ -22,30 +22,30 @@
     --popover: 0 0% 100%;
     --popover-foreground: 220 28% 16%;
     
-    --primary: 207 72% 55%;
+    --primary: 207 80% 60%;
     --primary-foreground: 0 0% 100%;
     
-    --secondary: 204 38% 91%;
+    --secondary: 204 60% 94%;
     --secondary-foreground: 218 24% 22%;
     
-    --muted: 210 32% 93%;
-    --muted-foreground: 219 14% 47%;
+    --muted: 208 56% 94%;
+    --muted-foreground: 220 18% 50%;
     
-    --accent: 158 54% 42%;
+    --accent: 164 60% 47%;
     --accent-foreground: 0 0% 100%;
     
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
     
-    --border: 210 26% 84%;
-    --input: 210 26% 88%;
+    --border: 207 44% 86%;
+    --input: 207 44% 90%;
     --ring: 207 72% 55%;
     
     --sidebar: 0 0% 100%;
     --sidebar-foreground: 220 28% 16%;
-    --sidebar-border: 205 42% 78%;
+    --sidebar-border: 207 48% 86%;
     
-    --radius: 0.25rem;
+    --radius: 1rem;
   }
 }
 
@@ -56,6 +56,7 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    letter-spacing: 0;
   }
 }
 
@@ -66,16 +67,31 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: hsl(205 45% 96%);
+  background: hsl(205 72% 97%);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, hsl(207 72% 68%) 0%, hsl(207 72% 55%) 100%);
-  border-radius: 0;
+  background: linear-gradient(180deg, hsl(207 85% 72%) 0%, hsl(166 64% 60%) 100%);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, hsl(207 72% 58%) 0%, hsl(158 54% 42%) 100%);
+}
+
+@layer components {
+  .nps-glass-panel {
+    @apply border border-white/70 bg-white/90 shadow-[0_18px_45px_rgba(78,115,150,0.16)] backdrop-blur-xl;
+  }
+
+  .nps-cute-button {
+    @apply rounded-2xl font-semibold transition-all duration-200 hover:-translate-y-0.5;
+  }
+
+  .nps-soft-label {
+    @apply text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400;
+  }
 }
 
 /* Hide scrollbar utility */

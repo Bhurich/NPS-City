@@ -192,35 +192,35 @@ export const MiniMap = React.memo(function MiniMap({ onNavigate, viewport }: Min
   }, [isDragging]);
   
   return (
-    <Card className="fixed bottom-6 right-8 p-3 shadow-lg bg-card/90 border-border/70 z-50">
-      <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground font-semibold mb-2">
+    <Card className="fixed bottom-6 right-8 p-4 nps-glass-panel rounded-[26px] z-50">
+      <div className="nps-soft-label mb-2 px-1">
         {m(MINIMAP_LABEL)}
       </div>
       <canvas
         ref={canvasRef}
         width={140}
         height={140}
-        className="block rounded-md border border-border/60 cursor-pointer select-none"
+        className="block rounded-2xl border border-white/80 shadow-inner cursor-pointer select-none"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
       />
-      <div className="mt-2 grid grid-cols-4 gap-1 text-[8px]">
+      <div className="mt-2 grid grid-cols-4 gap-1.5 text-[8px]">
         <div className="flex items-center gap-1">
-          <div className="w-2 h-2 bg-green-500 rounded-sm" />
+          <div className="w-2 h-2 bg-green-500 rounded-full" />
           <span className="text-muted-foreground">R</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="w-2 h-2 bg-blue-500 rounded-sm" />
+          <div className="w-2 h-2 bg-blue-500 rounded-full" />
           <span className="text-muted-foreground">C</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="w-2 h-2 bg-amber-500 rounded-sm" />
+          <div className="w-2 h-2 bg-amber-500 rounded-full" />
           <span className="text-muted-foreground">I</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="w-2 h-2 bg-pink-500 rounded-sm" />
+          <div className="w-2 h-2 bg-pink-500 rounded-full" />
           <span className="text-muted-foreground">S</span>
         </div>
       </div>

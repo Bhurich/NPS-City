@@ -54,8 +54,8 @@ module.exports = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ['var(--font-geist-sans)', 'system-ui', 'sans-serif'],
-        mono: ['var(--font-geist-mono)', 'monospace'],
+        sans: ['"Noto Sans Thai"', '"LINE Seed Sans TH"', 'var(--font-sans)', 'system-ui', 'sans-serif'],
+        mono: ['"SF Mono"', '"Roboto Mono"', 'monospace'],
       },
       keyframes: {
         "accordion-down": {
@@ -75,8 +75,6 @@ module.exports = {
   },
   plugins: [require("tailwindcss-animate")],
 }
-
-
 
 
 

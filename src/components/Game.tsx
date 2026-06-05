@@ -77,7 +77,7 @@ function StarterGuideDialog({
       if (nextOpen) onOpenChange(true);
     }}>
       <DialogContent
-        className="max-h-[92vh] max-w-[720px] overflow-y-auto"
+        className="max-h-[92vh] max-w-[720px] overflow-y-auto rounded-[28px] border-white/70 bg-white/95 shadow-[0_24px_70px_rgba(79,128,166,0.22)]"
         onEscapeKeyDown={(event) => event.preventDefault()}
         onPointerDownOutside={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
@@ -93,7 +93,7 @@ function StarterGuideDialog({
         </DialogHeader>
 
         <div className="grid gap-3 text-sm md:grid-cols-2">
-          <div className="rounded-md border bg-blue-50 p-4 text-blue-950">
+          <div className="rounded-3xl border border-blue-100 bg-blue-50 p-4 text-blue-950">
             <div className="flex items-center gap-2 font-semibold">
               <Zap className="h-4 w-4" />
               วิธีเริ่มให้ไม่งง
@@ -106,7 +106,7 @@ function StarterGuideDialog({
             </ol>
           </div>
 
-          <div className="rounded-md border bg-emerald-50 p-4 text-emerald-950">
+          <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-950">
             <div className="flex items-center gap-2 font-semibold">
               <Trophy className="h-4 w-4" />
               เงื่อนไขผู้ชนะ
@@ -118,7 +118,7 @@ function StarterGuideDialog({
             </div>
           </div>
 
-          <div className="rounded-md border bg-amber-50 p-4 text-amber-950">
+          <div className="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-950">
             <div className="font-semibold">หาเงินให้ทันใน 2 สัปดาห์</div>
             <div className="mt-2 space-y-1.5 text-amber-900/85">
               <div>รายได้มาจากประชากร งาน และโซนที่พัฒนาแล้ว</div>
@@ -127,7 +127,7 @@ function StarterGuideDialog({
             </div>
           </div>
 
-          <div className="rounded-md border bg-slate-50 p-4 text-slate-950">
+          <div className="rounded-3xl border border-slate-100 bg-slate-50 p-4 text-slate-950">
             <div className="font-semibold">คำถามสุ่มจากโรงไฟฟ้า</div>
             <div className="mt-2 space-y-1.5 text-slate-700">
               <div>เมื่อผู้เล่นสร้างโรงไฟฟ้า เกมจะแสดงคำถามสั้นๆ เกี่ยวกับพลังงาน</div>
@@ -160,7 +160,7 @@ function PowerPlantQuestionDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[520px]">
+      <DialogContent className="max-w-[520px] rounded-[28px] border-white/70 bg-white/95 shadow-[0_24px_70px_rgba(79,128,166,0.22)]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-amber-500" />
@@ -171,7 +171,7 @@ function PowerPlantQuestionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-md border bg-amber-50 p-4 text-sm text-amber-950">
+        <div className="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-950">
           <div className="font-semibold">โรงไฟฟ้ามีบทบาทสำคัญกับเมืองอย่างไร?</div>
           <div className="mt-2 text-amber-900/80">
             เลือกคำตอบเพื่อรับทราบ ระบบนี้จะต่อยอดเป็นคะแนนความรู้หรือโบนัสภารกิจได้
@@ -425,7 +425,7 @@ export default function Game({ onExit }: { onExit?: () => void }) {
   if (isMobile) {
     return (
       <TooltipProvider>
-        <div className="w-full h-full overflow-hidden bg-background flex flex-col">
+        <div className="w-full h-full overflow-hidden bg-gradient-to-br from-sky-50 via-cyan-50 to-emerald-50 flex flex-col">
           {/* Mobile Top Bar */}
           <MobileTopBar 
             selectedTile={selectedTile && state.selectedTool === 'select' ? state.grid[selectedTile.y][selectedTile.x] : null}
@@ -532,7 +532,7 @@ export default function Game({ onExit }: { onExit?: () => void }) {
   // Desktop layout
   return (
     <TooltipProvider>
-      <div className="w-full h-full min-h-[720px] overflow-hidden bg-background flex">
+      <div className="w-full h-full min-h-[720px] overflow-hidden bg-gradient-to-br from-sky-50 via-cyan-50 to-emerald-50 flex">
         <Sidebar onExit={onExit} />
         
         <div className="flex-1 flex flex-col ml-56">

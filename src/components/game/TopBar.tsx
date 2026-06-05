@@ -89,9 +89,9 @@ export function StatBadge({ value, label, variant = 'default' }: StatBadgeProps)
                      variant === 'destructive' ? 'text-red-500' : 'text-foreground';
   
   return (
-    <div className="flex flex-col items-start min-w-[70px]">
-      <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium mb-0.5">{label}</div>
-      <div className={`text-sm font-mono tabular-nums font-semibold ${colorClass}`}>{value}</div>
+    <div className="flex flex-col items-start min-w-[70px] rounded-2xl px-2.5 py-1.5 bg-white/45 border border-white/50">
+      <div className="text-[10px] text-muted-foreground tracking-wide font-semibold mb-0.5">{label}</div>
+      <div className={`text-sm tabular-nums font-extrabold ${colorClass}`}>{value}</div>
     </div>
   );
 }
@@ -113,7 +113,7 @@ export function DemandIndicator({ label, demand, color }: DemandIndicatorProps) 
   return (
     <div className="flex flex-col items-center gap-1">
       <span className={`text-[10px] font-bold ${color}`}>{label}</span>
-      <div className="w-3 h-8 bg-secondary relative rounded-sm overflow-hidden">
+      <div className="w-3 h-8 bg-white/70 border border-white/70 relative rounded-full overflow-hidden">
         <div className="absolute left-0 right-0 top-1/2 h-px bg-border" />
         <div
           className={`absolute left-0 right-0 ${color.replace('text-', 'bg-')}`}
@@ -163,7 +163,7 @@ export const StatsPanel = React.memo(function StatsPanel() {
   );
   
   return (
-    <div className="h-8 bg-secondary/50 border-b border-border flex items-center justify-center gap-8 text-xs">
+    <div className="h-10 bg-sky-50/80 border-b border-sky-100 flex items-center justify-center gap-8 text-xs shadow-[0_8px_24px_rgba(91,141,178,0.08)]">
       <MiniStat icon={<HappyIcon size={12} />} label={label('happiness', 'ความสุข')} value={stats.happiness} />
       <MiniStat icon={<HealthIcon size={12} />} label={label('health', 'สุขภาพ')} value={stats.health} />
       <MiniStat icon={<EducationIcon size={12} />} label={label('education', 'การศึกษา')} value={stats.education} />
@@ -193,13 +193,13 @@ export const TopBar = React.memo(function TopBar() {
   const formattedDate = `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}-${year}`;
   
   return (
-    <div className="h-14 bg-card border-b border-border flex items-center justify-between px-4">
+    <div className="h-16 bg-white/92 backdrop-blur-xl border-b border-sky-100 flex items-center justify-between px-5 rounded-bl-[28px] shadow-[0_12px_36px_rgba(79,128,166,0.12)]">
       <div className="flex items-center gap-6">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-foreground font-semibold text-sm">{cityName}</h1>
+            <h1 className="text-foreground font-extrabold text-base">{cityName}</h1>
           </div>
-          <div className="flex items-center gap-2 text-muted-foreground text-xs font-mono tabular-nums">
+          <div className="flex items-center gap-2 text-muted-foreground text-xs tabular-nums font-semibold">
             <Tooltip>
               <TooltipTrigger asChild>
                 <span>{monthNames[month - 1]} {year}</span>
@@ -212,14 +212,14 @@ export const TopBar = React.memo(function TopBar() {
           </div>
         </div>
         
-        <div className="flex items-center gap-0 bg-secondary rounded-md p-0">
+        <div className="flex items-center gap-1 bg-sky-50 border border-sky-100 rounded-2xl p-1 shadow-inner">
           {[0, 1, 2, 3].map(s => (
             <Button
               key={s}
               onClick={() => setSpeed(s as 0 | 1 | 2 | 3)}
               variant={speed === s ? 'default' : 'ghost'}
               size="icon-sm"
-              className="h-7 w-7 p-0 m-0"
+              className="h-8 w-8 p-0 m-0 rounded-xl"
               title={s === 0 ? 'Pause' : s === 1 ? 'Normal' : s === 2 ? 'Fast' : 'Very Fast'}
             >
               {s === 0 ? <PauseIcon size={12} /> : 
@@ -268,7 +268,7 @@ export const TopBar = React.memo(function TopBar() {
         <Separator orientation="vertical" className="h-8" />
         
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground text-xs">{label('tax', 'ภาษี')}</span>
+          <span className="text-muted-foreground text-xs font-semibold">{label('tax', 'ภาษี')}</span>
           <Slider
             value={[taxRate]}
             onValueChange={(value) => setTaxRate(value[0])}
@@ -277,7 +277,7 @@ export const TopBar = React.memo(function TopBar() {
             step={1}
             className="w-14"
           />
-          <span className="text-foreground text-xs font-mono tabular-nums w-7">{taxRate}%</span>
+          <span className="text-foreground text-xs font-bold tabular-nums w-7">{taxRate}%</span>
         </div>
         
         <Separator orientation="vertical" className="h-8" />
