@@ -214,6 +214,24 @@ const HoverSubmenu = React.memo(function HoverSubmenu({
       setIsOpen(false);
     }, delay);
   }, [clearCloseTimeout, isMovingTowardSubmenu]);
+
+  const handleButtonClick = useCallback(() => {
+    clearCloseTimeout();
+    if (!isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const spaceBelow = viewportHeight - rect.top;
+      const openUpward = forceOpenUpward || (spaceBelow < SUBMENU_MAX_HEIGHT && rect.top > SUBMENU_MAX_HEIGHT);
+
+      setMenuPosition({
+        top: openUpward ? rect.bottom : rect.top,
+        left: rect.right + SUBMENU_GAP,
+        buttonHeight: rect.height,
+        openUpward,
+      });
+    }
+    setIsOpen(true);
+  }, [clearCloseTimeout, forceOpenUpward, isOpen]);
   
   const handleSubmenuEnter = useCallback(() => {
     clearCloseTimeout();
@@ -245,6 +263,7 @@ const HoverSubmenu = React.memo(function HoverSubmenu({
       {/* Category Header Button */}
       <Button
         ref={buttonRef}
+        onClick={handleButtonClick}
         variant={hasSelectedTool ? 'default' : 'ghost'}
         className={`w-full justify-between gap-2 px-3 py-2.5 h-auto text-sm rounded-2xl group transition-all duration-200 ${
           hasSelectedTool ? 'bg-gradient-to-r from-sky-500 to-cyan-400 text-white shadow-[0_8px_18px_rgba(56,149,220,0.22)]' : 'hover:bg-sky-50 text-slate-600 hover:text-slate-900'
@@ -305,7 +324,10 @@ const HoverSubmenu = React.memo(function HoverSubmenu({
               return (
                 <Button
                   key={tool}
-                  onClick={() => onSelectTool(tool)}
+                  onClick={() => {
+                    onSelectTool(tool);
+                    setIsOpen(false);
+                  }}
                   disabled={!canAfford && info.cost > 0}
                   variant={isSelected ? 'default' : 'ghost'}
                   className={`w-full justify-start gap-2 px-3 py-2 h-auto text-sm rounded-xl transition-all duration-150 ${
@@ -401,6 +423,24 @@ const ActionSubmenu = React.memo(function ActionSubmenu({
       setIsOpen(false);
     }, delay);
   }, [clearCloseTimeout, isMovingTowardSubmenu]);
+
+  const handleButtonClick = useCallback(() => {
+    clearCloseTimeout();
+    if (!isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const spaceBelow = viewportHeight - rect.top;
+      const openUpward = spaceBelow < SUBMENU_MAX_HEIGHT && rect.top > SUBMENU_MAX_HEIGHT;
+
+      setMenuPosition({
+        top: openUpward ? rect.bottom : rect.top,
+        left: rect.right + SUBMENU_GAP,
+        buttonHeight: rect.height,
+        openUpward,
+      });
+    }
+    setIsOpen(true);
+  }, [clearCloseTimeout, isOpen]);
   
   const handleSubmenuEnter = useCallback(() => {
     clearCloseTimeout();
@@ -430,6 +470,7 @@ const ActionSubmenu = React.memo(function ActionSubmenu({
     >
       <Button
         ref={buttonRef}
+        onClick={handleButtonClick}
         variant="ghost"
         className={`w-full justify-between gap-2 px-3 py-2.5 h-auto text-sm rounded-2xl group transition-all duration-200 text-slate-600 hover:text-slate-900 hover:bg-sky-50 ${isOpen ? 'bg-sky-50' : ''}`}
       >
@@ -478,9 +519,12 @@ const ActionSubmenu = React.memo(function ActionSubmenu({
           </div>
           <div className="p-1.5 flex flex-col gap-0.5 max-h-48 overflow-y-auto">
             {actions.map(action => (
-              <Button
-                key={action.key}
-                onClick={action.onClick}
+                <Button
+                  key={action.key}
+                  onClick={() => {
+                    action.onClick();
+                    setIsOpen(false);
+                  }}
                 variant="ghost"
                 className="w-full justify-start gap-2 px-3 py-2 h-auto text-sm rounded-xl transition-all duration-150 hover:bg-sky-50"
                 title={action.description}

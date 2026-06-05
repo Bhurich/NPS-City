@@ -17,14 +17,6 @@ import { T } from 'gt-next';
 const LANGUAGES = [
   { code: 'en', name: 'English' },
   { code: 'th', name: 'ไทย' },
-  { code: 'es', name: 'Español' },
-  { code: 'zh', name: '中文' },
-  { code: 'ja', name: '日本語' },
-  { code: 'fr', name: 'Français' },
-  { code: 'de', name: 'Deutsch' },
-  { code: 'pt-BR', name: 'Português' },
-  { code: 'it', name: 'Italiano' },
-  { code: 'tr', name: 'Türkçe' },
 ] as const;
 
 // Globe icon for language button
@@ -90,6 +82,12 @@ export function LanguageSelector({
   const [isOpen, setIsOpen] = useState(false);
   
   const currentLanguage = LANGUAGES.find(l => l.code === locale) || LANGUAGES[0];
+
+  useEffect(() => {
+    if (!LANGUAGES.some(language => language.code === locale)) {
+      setLocale('en');
+    }
+  }, [locale, setLocale]);
 
   const handleSelectLanguage = (code: string) => {
     setLocale(code);
