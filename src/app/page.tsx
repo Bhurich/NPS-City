@@ -33,6 +33,7 @@ const SAVED_CITIES_INDEX_KEY = 'isocity-saved-cities-index';
 const PLAYER_PROFILE_PREFIX = 'nps-city-player-profile-';
 const READ_ONLY_VIEW_STORAGE_KEY = 'nps-city-read-only-view';
 const READ_ONLY_EXAMPLE_STORAGE_KEY = 'nps-city-read-only-example-state';
+const DELETED_CITIES_KEY = 'nps-city-deleted-cities';
 const ADMIN_PASSCODE = 'Aa140844';
 
 type DashboardCity = SavedCityMeta & {
@@ -148,6 +149,40 @@ function hasSavedGame(): boolean {
     return false;
   }
   return false;
+}
+
+function getCityDeleteKey(city: Pick<SavedCityMeta, 'id' | 'roomCode'>): string {
+  return city.roomCode ? `room:${city.roomCode.toUpperCase()}` : `id:${city.id}`;
+}
+
+function loadDeletedCityKeys(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const saved = localStorage.getItem(DELETED_CITIES_KEY);
+    const parsed = saved ? JSON.parse(saved) : [];
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function isCityMarkedDeleted(city: Pick<SavedCityMeta, 'id' | 'roomCode'>): boolean {
+  const deletedKeys = new Set(loadDeletedCityKeys());
+  return deletedKeys.has(getCityDeleteKey(city));
+}
+
+function markCityDeleted(city: Pick<SavedCityMeta, 'id' | 'roomCode'>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const deletedKeys = new Set(loadDeletedCityKeys());
+    deletedKeys.add(getCityDeleteKey(city));
+    if (city.roomCode) {
+      deletedKeys.add(`id:coop-${city.roomCode.toUpperCase()}`);
+    }
+    localStorage.setItem(DELETED_CITIES_KEY, JSON.stringify(Array.from(deletedKeys)));
+  } catch {
+    // Local delete markers are a convenience layer; cloud delete remains the source of truth.
+  }
 }
 
 // Load saved cities index from localStorage
@@ -492,25 +527,43 @@ async function deleteCityFromLeaderboard(city: SavedCityMeta): Promise<boolean> 
     let failed = false;
 
     if (normalizedRoomCode) {
-      const { error } = await supabase
+      const { error: hideError } = await supabase
+        .from('city_leaderboard')
+        .update({ is_public: false })
+        .eq('room_code', normalizedRoomCode);
+      if (hideError) {
+        failed = true;
+        console.warn('[Dashboard] Failed to hide leaderboard city by room:', hideError.message);
+      }
+
+      const { error: deleteError } = await supabase
         .from('city_leaderboard')
         .delete()
         .eq('room_code', normalizedRoomCode);
-      if (error) {
+      if (deleteError) {
         failed = true;
-        console.warn('[Dashboard] Failed to delete leaderboard city by room:', error.message);
+        console.warn('[Dashboard] Failed to delete leaderboard city by room:', deleteError.message);
       }
 
       const roomDeleted = await deleteGameRoom(normalizedRoomCode);
       if (!roomDeleted) failed = true;
     } else {
-      const { error } = await supabase
+      const { error: hideError } = await supabase
+        .from('city_leaderboard')
+        .update({ is_public: false })
+        .eq('city_id', city.id);
+      if (hideError) {
+        failed = true;
+        console.warn('[Dashboard] Failed to hide leaderboard city by id:', hideError.message);
+      }
+
+      const { error: deleteError } = await supabase
         .from('city_leaderboard')
         .delete()
         .eq('city_id', city.id);
-      if (error) {
+      if (deleteError) {
         failed = true;
-        console.warn('[Dashboard] Failed to delete leaderboard city by id:', error.message);
+        console.warn('[Dashboard] Failed to delete leaderboard city by id:', deleteError.message);
       }
     }
 
@@ -1145,10 +1198,10 @@ export default function HomePage() {
   const isMobile = isMobileDevice || isSmallScreen;
 
   const refreshDashboardCities = async () => {
-    const localCities = loadSavedCities();
-    const remoteCities = await loadGlobalDashboardCities();
+    const localCities = loadSavedCities().filter((city) => !isCityMarkedDeleted(city));
+    const remoteCities = (await loadGlobalDashboardCities()).filter((city) => !isCityMarkedDeleted(city));
     setGlobalCities(remoteCities);
-    setSavedCities(mergeDashboardCities(localCities, remoteCities));
+    setSavedCities(mergeDashboardCities(localCities, remoteCities).filter((city) => !isCityMarkedDeleted(city)));
     setHasSaved(hasSavedGame());
   };
 
@@ -1157,7 +1210,9 @@ export default function HomePage() {
     const checkSavedGame = () => {
       setIsChecking(false);
       clearLegacyReadOnlyExampleFromPlayableSave();
-      setSavedCities(mergeDashboardCities(loadSavedCities(), globalCities));
+      const localCities = loadSavedCities().filter((city) => !isCityMarkedDeleted(city));
+      const visibleGlobalCities = globalCities.filter((city) => !isCityMarkedDeleted(city));
+      setSavedCities(mergeDashboardCities(localCities, visibleGlobalCities).filter((city) => !isCityMarkedDeleted(city)));
       setHasSaved(hasSavedGame());
       
       // Check for room code in URL (legacy format) - redirect to new format
@@ -1509,23 +1564,28 @@ export default function HomePage() {
     setDeleteCityError(null);
     try {
       const city = cityPendingDelete;
-      const deletedFromCloud = await deleteCityFromLeaderboard(city);
+      markCityDeleted(city);
 
-      // Remove from saved cities index
+      // Remove only the real local saved index. Do not write merged global rows back to localStorage.
       const normalizedRoomCode = city.roomCode?.toUpperCase();
-      const updatedCities = savedCities.filter(c => {
+      const updatedLocalCities = loadSavedCities().filter(c => {
         if (c.id === city.id) return false;
         if (normalizedRoomCode && c.roomCode?.toUpperCase() === normalizedRoomCode) return false;
         return true;
       });
-      localStorage.setItem(SAVED_CITIES_INDEX_KEY, JSON.stringify(updatedCities));
-      setSavedCities(updatedCities);
+      localStorage.setItem(SAVED_CITIES_INDEX_KEY, JSON.stringify(updatedLocalCities));
+      setSavedCities((currentCities) => currentCities.filter(c => {
+        if (c.id === city.id) return false;
+        if (normalizedRoomCode && c.roomCode?.toUpperCase() === normalizedRoomCode) return false;
+        return !isCityMarkedDeleted(c);
+      }));
       
       // Also remove the stored snapshot for both local and co-op cities.
       localStorage.removeItem(SAVED_CITY_PREFIX + city.id);
       if (normalizedRoomCode) {
         localStorage.removeItem(SAVED_CITY_PREFIX + `coop-${normalizedRoomCode}`);
       }
+      const deletedFromCloud = await deleteCityFromLeaderboard(city);
       setCityPendingDelete(null);
       await refreshDashboardCities();
 

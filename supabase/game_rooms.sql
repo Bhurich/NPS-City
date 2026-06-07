@@ -68,4 +68,18 @@ begin
       using (true)
       with check (true);
   end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'game_rooms'
+      and policyname = 'Anyone can delete game rooms'
+  ) then
+    create policy "Anyone can delete game rooms"
+      on public.game_rooms
+      for delete
+      to anon, authenticated
+      using (true);
+  end if;
 end $$;
