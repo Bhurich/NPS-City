@@ -689,7 +689,7 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
     harvested_plantation: 0.72,
   },
   directAssetVerticalOffsets: {
-    biomass_power_plant: 0,
+    biomass_power_plant: -0.2,
     solar_farm: 0.06,
     floating_solar: 0.08,
     wood_chipping_plant: 0,

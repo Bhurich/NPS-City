@@ -18,7 +18,8 @@ import Game from '@/components/Game';
 import { CoopModal } from '@/components/multiplayer/CoopModal';
 import { useMobile } from '@/hooks/useMobile';
 import { getSpritePack, getSpriteCoords, DEFAULT_SPRITE_PACK_ID } from '@/lib/renderConfig';
-import { loadGameRoom } from '@/lib/multiplayer/database';
+import { deleteGameRoom, loadGameRoom } from '@/lib/multiplayer/database';
+import { NPS_EVENTS, NPS_MISSIONS } from '@/lib/npsChallenge';
 import { SavedCityMeta, GameState } from '@/types/game';
 import { decompressFromUTF16, compressToUTF16 } from 'lz-string';
 import { LanguageSelector } from '@/components/ui/LanguageSelector';
@@ -32,6 +33,7 @@ const SAVED_CITIES_INDEX_KEY = 'isocity-saved-cities-index';
 const PLAYER_PROFILE_PREFIX = 'nps-city-player-profile-';
 const READ_ONLY_VIEW_STORAGE_KEY = 'nps-city-read-only-view';
 const READ_ONLY_EXAMPLE_STORAGE_KEY = 'nps-city-read-only-example-state';
+const ADMIN_PASSCODE = 'Aa140844';
 
 type DashboardCity = SavedCityMeta & {
   playerName?: string;
@@ -483,6 +485,42 @@ async function publishCityToLeaderboard(
   }
 }
 
+async function deleteCityFromLeaderboard(city: SavedCityMeta): Promise<boolean> {
+  if (!supabase) return true;
+  try {
+    const normalizedRoomCode = city.roomCode?.toUpperCase();
+    let failed = false;
+
+    if (normalizedRoomCode) {
+      const { error } = await supabase
+        .from('city_leaderboard')
+        .delete()
+        .eq('room_code', normalizedRoomCode);
+      if (error) {
+        failed = true;
+        console.warn('[Dashboard] Failed to delete leaderboard city by room:', error.message);
+      }
+
+      const roomDeleted = await deleteGameRoom(normalizedRoomCode);
+      if (!roomDeleted) failed = true;
+    } else {
+      const { error } = await supabase
+        .from('city_leaderboard')
+        .delete()
+        .eq('city_id', city.id);
+      if (error) {
+        failed = true;
+        console.warn('[Dashboard] Failed to delete leaderboard city by id:', error.message);
+      }
+    }
+
+    return !failed;
+  } catch (e) {
+    console.warn('[Dashboard] Failed to delete city from Supabase:', e);
+    return false;
+  }
+}
+
 // Sprite Gallery component that renders sprites using canvas (like SpriteTestPanel)
 function SpriteGallery({ count = 16, cols = 4, cellSize = 120 }: { count?: number; cols?: number; cellSize?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -755,6 +793,191 @@ function CityDashboard({
   );
 }
 
+function AdminAccessButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      type="button"
+      onClick={onClick}
+      variant="outline"
+      className="fixed right-4 top-4 z-50 rounded-full border-amber-300/40 bg-slate-950/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-amber-100 shadow-lg backdrop-blur hover:bg-amber-300/15"
+    >
+      ADMIN
+    </Button>
+  );
+}
+
+function AdminDialog({
+  open,
+  unlocked,
+  passcode,
+  error,
+  cities,
+  isDeleting,
+  onOpenChange,
+  onPasscodeChange,
+  onLogin,
+  onLogout,
+  onRefresh,
+  onDeleteCity,
+}: {
+  open: boolean;
+  unlocked: boolean;
+  passcode: string;
+  error: string | null;
+  cities: DashboardCity[];
+  isDeleting: boolean;
+  onOpenChange: (open: boolean) => void;
+  onPasscodeChange: (value: string) => void;
+  onLogin: () => void;
+  onLogout: () => void;
+  onRefresh: () => void;
+  onDeleteCity: (city: DashboardCity) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[88vh] max-w-5xl overflow-hidden border-white/10 bg-slate-950 text-white">
+        <DialogHeader>
+          <DialogTitle>ADMIN Control Center</DialogTitle>
+          <DialogDescription className="text-white/50">
+            จัดการ Quest, Event และรายการเมืองที่เชื่อมกับ Dashboard
+          </DialogDescription>
+        </DialogHeader>
+
+        {!unlocked ? (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="admin-passcode">รหัสเข้าสู่ระบบ Admin</Label>
+              <Input
+                id="admin-passcode"
+                type="password"
+                value={passcode}
+                onChange={(e) => onPasscodeChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onLogin();
+                }}
+                className="border-white/15 bg-white/10 text-white"
+                autoFocus
+              />
+              {error && <p className="text-sm text-red-300">{error}</p>}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                ยกเลิก
+              </Button>
+              <Button type="button" onClick={onLogin}>
+                เข้าสู่ระบบ
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-3">
+              <div>
+                <div className="font-semibold text-emerald-100">Admin พร้อมใช้งาน</div>
+                <div className="text-xs text-emerald-100/60">กดรีเฟรชเพื่อดึงข้อมูล Dashboard ล่าสุดจาก Supabase</div>
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={onRefresh} className="border-white/15 bg-white/5 text-white hover:bg-white/15">
+                  รีเฟรชข้อมูล
+                </Button>
+                <Button type="button" variant="outline" onClick={onLogout} className="border-red-300/30 bg-red-500/10 text-red-100 hover:bg-red-500/20">
+                  ออกจาก Admin
+                </Button>
+              </div>
+            </div>
+
+            <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-white">เมืองใน Dashboard</h3>
+                  <p className="text-xs text-white/45">ลบตรงนี้จะลบจาก Supabase จริง รวมถึงห้อง Co-op ถ้ามี</p>
+                </div>
+                <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/65">{cities.length} เมือง</span>
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-white/10">
+                <div className="grid grid-cols-[1.2fr_.7fr_.55fr_.55fr_auto] gap-2 bg-white/[0.06] px-3 py-2 text-xs text-white/45">
+                  <span>เมือง</span>
+                  <span>เงิน</span>
+                  <span>สุข</span>
+                  <span>สิ่งแวดล้อม</span>
+                  <span>จัดการ</span>
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  {cities.map((city) => (
+                    <div key={`${city.id}-${city.roomCode || 'local'}`} className="grid grid-cols-[1.2fr_.7fr_.55fr_.55fr_auto] items-center gap-2 border-t border-white/10 px-3 py-2 text-sm">
+                      <div className="min-w-0">
+                        <div className="truncate text-white/90">{city.cityName}</div>
+                        <div className="truncate text-xs text-white/35">{city.playerName || 'Local / Unknown'}</div>
+                      </div>
+                      <div className="text-emerald-200">{formatCurrency(city.money)}</div>
+                      <div className="text-amber-100">{percentValue(city.happiness)}%</div>
+                      <div className="text-sky-100">{percentValue(city.environment)}%</div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={isDeleting}
+                        onClick={() => onDeleteCity(city)}
+                        className="rounded-full border-red-300/30 bg-red-500/10 text-red-100 hover:bg-red-500/20"
+                      >
+                        ลบ
+                      </Button>
+                    </div>
+                  ))}
+                  {cities.length === 0 && (
+                    <div className="px-3 py-6 text-center text-sm text-white/40">ยังไม่มีข้อมูลเมือง</div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+                <h3 className="font-semibold text-white">รายการ Quest</h3>
+                <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+                  {NPS_MISSIONS.map((mission) => (
+                    <div key={mission.id} className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-white/90">Day {mission.day}: {mission.title}</div>
+                          <p className="mt-1 text-xs leading-relaxed text-white/45">{mission.description}</p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-emerald-300/10 px-2 py-1 text-xs text-emerald-100">
+                          +{mission.reward.toLocaleString()}
+                        </span>
+                      </div>
+                      <ul className="mt-2 space-y-1 text-xs text-white/55">
+                        {mission.checks.map((check) => (
+                          <li key={check.label}>- {check.label}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+                <h3 className="font-semibold text-white">รายการ Event</h3>
+                <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+                  {NPS_EVENTS.map((event) => (
+                    <div key={`${event.day}-${event.title}`} className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                      <div className="text-sm font-medium text-white/90">Day {event.day}: {event.title}</div>
+                      <p className="mt-1 text-xs leading-relaxed text-white/45">{event.description}</p>
+                      <div className="mt-2 rounded-xl border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">
+                        {event.impact}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 const SAVED_CITY_PREFIX = 'isocity-city-';
 
 type PlayerProfile = {
@@ -908,6 +1131,16 @@ export default function HomePage() {
   const [showProfileDialog, setShowProfileDialog] = useState(false);
   const [profileNameInput, setProfileNameInput] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [cityPendingDelete, setCityPendingDelete] = useState<DashboardCity | null>(null);
+  const [isDeletingCity, setIsDeletingCity] = useState(false);
+  const [deleteCityError, setDeleteCityError] = useState<string | null>(null);
+  const [showAdminDialog, setShowAdminDialog] = useState(false);
+  const [adminUnlocked, setAdminUnlocked] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return sessionStorage.getItem('nps-city-admin-unlocked') === 'true';
+  });
+  const [adminPasscodeInput, setAdminPasscodeInput] = useState('');
+  const [adminLoginError, setAdminLoginError] = useState<string | null>(null);
   const { isMobileDevice, isSmallScreen } = useMobile();
   const isMobile = isMobileDevice || isSmallScreen;
 
@@ -1264,20 +1497,133 @@ export default function HomePage() {
     }
   };
 
-  // Delete a saved city from the index
-  const deleteSavedCity = (city: SavedCityMeta) => {
+  const requestDeleteCity = (city: DashboardCity) => {
+    setDeleteCityError(null);
+    setCityPendingDelete(city);
+  };
+
+  // Delete a saved city from local storage and Supabase.
+  const confirmDeleteCity = async () => {
+    if (!cityPendingDelete) return;
+    setIsDeletingCity(true);
+    setDeleteCityError(null);
     try {
+      const city = cityPendingDelete;
+      const deletedFromCloud = await deleteCityFromLeaderboard(city);
+
       // Remove from saved cities index
-      const updatedCities = savedCities.filter(c => c.id !== city.id);
+      const normalizedRoomCode = city.roomCode?.toUpperCase();
+      const updatedCities = savedCities.filter(c => {
+        if (c.id === city.id) return false;
+        if (normalizedRoomCode && c.roomCode?.toUpperCase() === normalizedRoomCode) return false;
+        return true;
+      });
       localStorage.setItem(SAVED_CITIES_INDEX_KEY, JSON.stringify(updatedCities));
       setSavedCities(updatedCities);
       
       // Also remove the stored snapshot for both local and co-op cities.
       localStorage.removeItem(SAVED_CITY_PREFIX + city.id);
+      if (normalizedRoomCode) {
+        localStorage.removeItem(SAVED_CITY_PREFIX + `coop-${normalizedRoomCode}`);
+      }
+      setCityPendingDelete(null);
+      await refreshDashboardCities();
+
+      if (!deletedFromCloud && isSupabaseConfigured) {
+        setDeleteCityError('ลบในเครื่องแล้ว แต่ Supabase ยังลบไม่สำเร็จ ตรวจสอบ policy ของตาราง city_leaderboard/game_rooms');
+      }
     } catch {
-      console.error('Failed to delete saved city');
+      setDeleteCityError('ลบเมืองไม่สำเร็จ กรุณาลองใหม่');
+    } finally {
+      setIsDeletingCity(false);
     }
   };
+
+  const handleAdminLogin = () => {
+    if (adminPasscodeInput === ADMIN_PASSCODE) {
+      sessionStorage.setItem('nps-city-admin-unlocked', 'true');
+      setAdminUnlocked(true);
+      setAdminLoginError(null);
+      setAdminPasscodeInput('');
+      return;
+    }
+    setAdminLoginError('รหัส Admin ไม่ถูกต้อง');
+  };
+
+  const handleAdminLogout = () => {
+    sessionStorage.removeItem('nps-city-admin-unlocked');
+    setAdminUnlocked(false);
+    setAdminPasscodeInput('');
+  };
+
+  const landingDialogs = (
+    <>
+      <AdminDialog
+        open={showAdminDialog}
+        unlocked={adminUnlocked}
+        passcode={adminPasscodeInput}
+        error={adminLoginError}
+        cities={savedCities}
+        isDeleting={isDeletingCity}
+        onOpenChange={setShowAdminDialog}
+        onPasscodeChange={setAdminPasscodeInput}
+        onLogin={handleAdminLogin}
+        onLogout={handleAdminLogout}
+        onRefresh={refreshDashboardCities}
+        onDeleteCity={requestDeleteCity}
+      />
+
+      <Dialog open={Boolean(cityPendingDelete)} onOpenChange={(open) => {
+        if (!open && !isDeletingCity) {
+          setCityPendingDelete(null);
+          setDeleteCityError(null);
+        }
+      }}>
+        <DialogContent className="border-red-300/20 bg-slate-950 text-white">
+          <DialogHeader>
+            <DialogTitle>ยืนยันการลบเมือง</DialogTitle>
+            <DialogDescription className="text-white/55">
+              การลบนี้จะลบเมืองออกจากรายการบันทึก และถ้าเมืองอยู่บน Supabase จะลบออกจาก Dashboard/ห้อง Co-op จริงด้วย
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="text-sm text-white/45">เมืองที่จะลบ</div>
+            <div className="mt-1 text-xl font-semibold text-white">{cityPendingDelete?.cityName || '-'}</div>
+            <div className="mt-2 text-sm text-white/50">
+              เงิน {formatCurrency(cityPendingDelete?.money ?? 0)} · สุข {percentValue(cityPendingDelete?.happiness)}% · สิ่งแวดล้อม {percentValue(cityPendingDelete?.environment)}%
+            </div>
+          </div>
+          {deleteCityError && (
+            <div className="rounded-2xl border border-red-300/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+              {deleteCityError}
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isDeletingCity}
+              onClick={() => {
+                setCityPendingDelete(null);
+                setDeleteCityError(null);
+              }}
+              className="border-white/15 bg-white/5 text-white hover:bg-white/15"
+            >
+              ยกเลิก
+            </Button>
+            <Button
+              type="button"
+              disabled={isDeletingCity}
+              onClick={confirmDeleteCity}
+              className="bg-red-500 text-white hover:bg-red-400"
+            >
+              {isDeletingCity ? 'กำลังลบ...' : 'ยืนยันการลบเมือง'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 
   // Handle co-op game start
   const handleCoopStart = (isHost: boolean, initialState?: GameState, roomCode?: string) => {
@@ -1402,6 +1748,7 @@ export default function HomePage() {
     return (
       <MultiplayerContextProvider>
         <main className="h-[100dvh] max-h-[100dvh] bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex flex-col items-center px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto">
+          <AdminAccessButton onClick={() => setShowAdminDialog(true)} />
           {/* Spacer to push content down slightly from top */}
           <div className="flex-shrink-0 h-4 sm:h-8" />
           
@@ -1466,7 +1813,7 @@ export default function HomePage() {
                     key={`${city.id}-${city.roomCode || 'local'}`}
                     city={city}
                     onLoad={() => loadSavedCity(city)}
-                    onDelete={() => deleteSavedCity(city)}
+                    onDelete={() => requestDeleteCity(city)}
                   />
                 ))}
               </div>
@@ -1491,6 +1838,7 @@ export default function HomePage() {
             pendingRoomCode={pendingRoomCode}
           />
           {profileDialog}
+          {landingDialogs}
         </main>
       </MultiplayerContextProvider>
     );
@@ -1500,6 +1848,7 @@ export default function HomePage() {
   return (
     <MultiplayerContextProvider>
       <main className="h-screen overflow-y-auto bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-8">
+        <AdminAccessButton onClick={() => setShowAdminDialog(true)} />
         <div className="mx-auto max-w-7xl w-full space-y-8">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             {/* Left - Title and Start Button */}
@@ -1554,7 +1903,7 @@ export default function HomePage() {
                       key={`${city.id}-${city.roomCode || 'local'}`}
                       city={city}
                       onLoad={() => loadSavedCity(city)}
-                      onDelete={() => deleteSavedCity(city)}
+                      onDelete={() => requestDeleteCity(city)}
                     />
                   ))}
                 </div>
@@ -1582,6 +1931,7 @@ export default function HomePage() {
           pendingRoomCode={pendingRoomCode}
         />
         {profileDialog}
+        {landingDialogs}
       </main>
     </MultiplayerContextProvider>
   );

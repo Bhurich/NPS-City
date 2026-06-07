@@ -586,7 +586,7 @@ export const Sidebar = React.memo(function Sidebar({ onExit }: { onExit?: () => 
     { 
       key: 'npsEnergy', 
       label: CATEGORY_LABELS.npsEnergy, 
-      tools: ['biomass_power_plant', 'solar_farm', 'floating_solar', 'battery_storage', 'wood_chipping_plant', 'biomass_plantation', 'harvested_plantation'] as Tool[]
+      tools: ['biomass_power_plant', 'floating_solar', 'battery_storage', 'wood_chipping_plant', 'biomass_plantation', 'harvested_plantation'] as Tool[]
     },
     { 
       key: 'utilities', 

@@ -233,3 +233,25 @@ export async function updatePlayerCount(
   }
 }
 
+/**
+ * Delete a game room from Supabase.
+ */
+export async function deleteGameRoom(roomCode: string): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from('game_rooms')
+      .delete()
+      .eq('room_code', roomCode.toUpperCase());
+
+    if (error) {
+      console.error('[Database] Failed to delete room:', error);
+      return false;
+    }
+
+    return true;
+  } catch (e) {
+    console.error('[Database] Error deleting room:', e);
+    return false;
+  }
+}
