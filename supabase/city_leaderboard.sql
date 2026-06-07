@@ -67,30 +67,13 @@ begin
       with check (true);
   end if;
 
-  if not exists (
-    select 1 from pg_policies
-    where schemaname = 'public'
-      and tablename = 'city_leaderboard'
-      and policyname = 'Anyone can update city leaderboard rows'
-  ) then
-    create policy "Anyone can update city leaderboard rows"
-      on public.city_leaderboard
-      for update
-      to anon, authenticated
-      using (true)
-      with check (true);
-  end if;
+  drop policy if exists "Anyone can update city leaderboard rows" on public.city_leaderboard;
+  drop policy if exists "Anyone can delete city leaderboard rows" on public.city_leaderboard;
+  drop policy if exists "Users can delete own city" on public.city_leaderboard;
 
-  if not exists (
-    select 1 from pg_policies
-    where schemaname = 'public'
-      and tablename = 'city_leaderboard'
-      and policyname = 'Anyone can delete city leaderboard rows'
-  ) then
-    create policy "Anyone can delete city leaderboard rows"
-      on public.city_leaderboard
-      for delete
-      to anon, authenticated
-      using (true);
-  end if;
+  create policy "Users can delete own city"
+    on public.city_leaderboard
+    for delete
+    to authenticated
+    using (auth.uid() = user_id);
 end $$;

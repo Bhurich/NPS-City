@@ -18,7 +18,7 @@ import Game from '@/components/Game';
 import { CoopModal } from '@/components/multiplayer/CoopModal';
 import { useMobile } from '@/hooks/useMobile';
 import { getSpritePack, getSpriteCoords, DEFAULT_SPRITE_PACK_ID } from '@/lib/renderConfig';
-import { deleteGameRoom, loadGameRoom } from '@/lib/multiplayer/database';
+import { loadGameRoom } from '@/lib/multiplayer/database';
 import { NPS_EVENTS, NPS_MISSIONS } from '@/lib/npsChallenge';
 import { SavedCityMeta, GameState } from '@/types/game';
 import { decompressFromUTF16, compressToUTF16 } from 'lz-string';
@@ -30,6 +30,7 @@ import type { User } from '@supabase/supabase-js';
 
 const STORAGE_KEY = 'isocity-game-state';
 const SAVED_CITIES_INDEX_KEY = 'isocity-saved-cities-index';
+const OWNED_ROOM_CODES_KEY = 'nps-city-owned-room-codes';
 const PLAYER_PROFILE_PREFIX = 'nps-city-player-profile-';
 const READ_ONLY_VIEW_STORAGE_KEY = 'nps-city-read-only-view';
 const READ_ONLY_EXAMPLE_STORAGE_KEY = 'nps-city-read-only-example-state';
@@ -143,7 +144,8 @@ function hasSavedGame(): boolean {
     clearLegacyReadOnlyExampleFromPlayableSave();
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      return decodeSavedGameState(saved) !== null;
+      const parsed = decodeSavedGameState(saved);
+      return parsed !== null && isOwnPlayableCity(parsed);
     }
   } catch {
     return false;
@@ -183,6 +185,39 @@ function markCityDeleted(city: Pick<SavedCityMeta, 'id' | 'roomCode'>): void {
   } catch {
     // Local delete markers are a convenience layer; cloud delete remains the source of truth.
   }
+}
+
+function loadOwnedRoomCodes(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const saved = localStorage.getItem(OWNED_ROOM_CODES_KEY);
+    const parsed = saved ? JSON.parse(saved) : [];
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function markOwnedRoomCode(roomCode?: string): void {
+  if (typeof window === 'undefined' || !roomCode) return;
+  try {
+    const normalizedRoomCode = roomCode.toUpperCase();
+    const ownedCodes = new Set(loadOwnedRoomCodes().map((code) => code.toUpperCase()));
+    ownedCodes.add(normalizedRoomCode);
+    localStorage.setItem(OWNED_ROOM_CODES_KEY, JSON.stringify(Array.from(ownedCodes)));
+  } catch {
+    // Ownership marker is local-only. A failed write should not block room creation.
+  }
+}
+
+function isOwnedRoomCode(roomCode?: string): boolean {
+  if (!roomCode) return false;
+  return loadOwnedRoomCodes().some((code) => code.toUpperCase() === roomCode.toUpperCase());
+}
+
+function isOwnPlayableCity(state: GameState): boolean {
+  const roomCode = state.currentRoomCode?.toUpperCase();
+  return !roomCode || isOwnedRoomCode(roomCode);
 }
 
 // Load saved cities index from localStorage
@@ -545,8 +580,8 @@ async function deleteCityFromLeaderboard(city: SavedCityMeta): Promise<boolean> 
         console.warn('[Dashboard] Failed to delete leaderboard city by room:', deleteError.message);
       }
 
-      const roomDeleted = await deleteGameRoom(normalizedRoomCode);
-      if (!roomDeleted) failed = true;
+      // Do not delete game_rooms from the public client. Without an owner column
+      // on that table, deleting rooms here would let users remove rooms they do not own.
     } else {
       const { error: hideError } = await supabase
         .from('city_leaderboard')
@@ -1167,7 +1202,8 @@ function AuthControls({
 export default function HomePage() {
   const [showGame, setShowGame] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
-  const [savedCities, setSavedCities] = useState<DashboardCity[]>([]);
+  const [savedCities, setSavedCities] = useState<SavedCityMeta[]>([]);
+  const [dashboardCities, setDashboardCities] = useState<DashboardCity[]>([]);
   const [globalCities, setGlobalCities] = useState<DashboardCity[]>([]);
   const [hasSaved, setHasSaved] = useState(false);
   const [showCoopModal, setShowCoopModal] = useState(false);
@@ -1201,7 +1237,8 @@ export default function HomePage() {
     const localCities = loadSavedCities().filter((city) => !isCityMarkedDeleted(city));
     const remoteCities = (await loadGlobalDashboardCities()).filter((city) => !isCityMarkedDeleted(city));
     setGlobalCities(remoteCities);
-    setSavedCities(mergeDashboardCities(localCities, remoteCities).filter((city) => !isCityMarkedDeleted(city)));
+    setSavedCities(localCities);
+    setDashboardCities(mergeDashboardCities([], remoteCities).filter((city) => !isCityMarkedDeleted(city)));
     setHasSaved(hasSavedGame());
   };
 
@@ -1212,7 +1249,8 @@ export default function HomePage() {
       clearLegacyReadOnlyExampleFromPlayableSave();
       const localCities = loadSavedCities().filter((city) => !isCityMarkedDeleted(city));
       const visibleGlobalCities = globalCities.filter((city) => !isCityMarkedDeleted(city));
-      setSavedCities(mergeDashboardCities(localCities, visibleGlobalCities).filter((city) => !isCityMarkedDeleted(city)));
+      setSavedCities(localCities);
+      setDashboardCities(mergeDashboardCities([], visibleGlobalCities).filter((city) => !isCityMarkedDeleted(city)));
       setHasSaved(hasSavedGame());
       
       // Check for room code in URL (legacy format) - redirect to new format
@@ -1445,7 +1483,7 @@ export default function HomePage() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       const latestState = saved ? decodeSavedGameState(saved) : null;
-      if (latestState) {
+      if (latestState && isOwnPlayableCity(latestState)) {
         saveCityToIndex(latestState, latestState.currentRoomCode);
         await publishCityToLeaderboard(latestState, authUser, playerProfile, latestState.currentRoomCode);
       }
@@ -1579,6 +1617,11 @@ export default function HomePage() {
         if (normalizedRoomCode && c.roomCode?.toUpperCase() === normalizedRoomCode) return false;
         return !isCityMarkedDeleted(c);
       }));
+      setDashboardCities((currentCities) => currentCities.filter(c => {
+        if (c.id === city.id) return false;
+        if (normalizedRoomCode && c.roomCode?.toUpperCase() === normalizedRoomCode) return false;
+        return !isCityMarkedDeleted(c);
+      }));
       
       // Also remove the stored snapshot for both local and co-op cities.
       localStorage.removeItem(SAVED_CITY_PREFIX + city.id);
@@ -1623,7 +1666,7 @@ export default function HomePage() {
         unlocked={adminUnlocked}
         passcode={adminPasscodeInput}
         error={adminLoginError}
-        cities={savedCities}
+        cities={dashboardCities}
         isDeleting={isDeletingCity}
         onOpenChange={setShowAdminDialog}
         onPasscodeChange={setAdminPasscodeInput}
@@ -1701,6 +1744,7 @@ export default function HomePage() {
         
         // Also save to saved cities index so it appears on homepage
         if (roomCode) {
+          markOwnedRoomCode(roomCode);
           saveCityToIndex(stateWithRoom, roomCode);
           void publishCityToLeaderboard(stateWithRoom, authUser, playerProfile, roomCode);
         }
@@ -1718,11 +1762,7 @@ export default function HomePage() {
         const compressed = compressToUTF16(JSON.stringify(stateWithRoom));
         localStorage.setItem(STORAGE_KEY, compressed);
         
-        // Also save to saved cities index so it appears on homepage
-        if (roomCode) {
-          saveCityToIndex(stateWithRoom, roomCode);
-          void publishCityToLeaderboard(stateWithRoom, authUser, playerProfile, roomCode);
-        }
+        // Guests can collaborate in the room, but it is not saved as their own city.
       } catch (e) {
         console.error('Failed to save co-op state:', e);
       }
@@ -1739,6 +1779,11 @@ export default function HomePage() {
     localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
     localStorage.removeItem(READ_ONLY_EXAMPLE_STORAGE_KEY);
     clearLegacyReadOnlyExampleFromPlayableSave();
+    const saved = localStorage.getItem(STORAGE_KEY);
+    const parsed = saved ? decodeSavedGameState(saved) : null;
+    if (parsed && !isOwnPlayableCity(parsed)) {
+      localStorage.removeItem(STORAGE_KEY);
+    }
     setReadOnlyMode(false);
     setShowGame(true);
   };
@@ -1881,9 +1926,9 @@ export default function HomePage() {
           )}
           
           {/* Dashboard - read-only city viewer */}
-          {savedCities.length > 0 && (
+          {dashboardCities.length > 0 && (
             <div className="mt-3 w-full flex-1">
-              <CityDashboard cities={savedCities} onView={viewSavedCity} compact />
+              <CityDashboard cities={dashboardCities} onView={viewSavedCity} compact />
             </div>
           )}
           
@@ -1978,8 +2023,8 @@ export default function HomePage() {
           </div>
 
           {/* Dashboard */}
-          {savedCities.length > 0 && (
-            <CityDashboard cities={savedCities} onView={viewSavedCity} />
+          {dashboardCities.length > 0 && (
+            <CityDashboard cities={dashboardCities} onView={viewSavedCity} />
           )}
         </div>
         
