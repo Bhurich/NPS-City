@@ -258,6 +258,24 @@ function saveCityToIndex(state: GameState, roomCode?: string): void {
   }
 }
 
+const PLACEHOLDER_CITY_NAMES = new Set(['NPS City', 'Co-op City', 'เมืองของทีม', 'My Co-op City']);
+
+function isPlaceholderCityName(name?: string | null): boolean {
+  return !name || PLACEHOLDER_CITY_NAMES.has(name.trim());
+}
+
+function chooseDisplayCityName(incoming: DashboardCity, existing?: DashboardCity): string {
+  if (!existing) return incoming.cityName || 'NPS City';
+  const incomingName = incoming.cityName || '';
+  const existingName = existing.cityName || '';
+  const incomingIsPlaceholder = isPlaceholderCityName(incomingName);
+  const existingIsPlaceholder = isPlaceholderCityName(existingName);
+
+  if (!incomingIsPlaceholder && existingIsPlaceholder) return incomingName;
+  if (incomingIsPlaceholder && !existingIsPlaceholder) return existingName;
+  return incoming.savedAt >= existing.savedAt ? incomingName || existingName || 'NPS City' : existingName || incomingName || 'NPS City';
+}
+
 function normalizeSavedCities(cities: SavedCityMeta[]): SavedCityMeta[] {
   const latestByKey = new Map<string, SavedCityMeta>();
   const coopSnapshots = new Set<string>();
@@ -285,7 +303,7 @@ function normalizeSavedCities(cities: SavedCityMeta[]): SavedCityMeta[] {
     const duplicateLocalCity = roomCode ? localBySnapshot.get(snapshotKey) : undefined;
     const shouldUseLocalName =
       duplicateLocalCity &&
-      ['NPS City', 'Co-op City', 'เมืองของทีม'].includes(city.cityName);
+      isPlaceholderCityName(city.cityName);
     const cityWithMetricFallbacks: SavedCityMeta = {
       ...city,
       communityTrust: city.communityTrust ?? city.happiness ?? 0,
@@ -378,9 +396,22 @@ function mergeDashboardCities(localCities: SavedCityMeta[], globalCities: Dashbo
   const addCity = (city: DashboardCity) => {
     const key = city.roomCode ? `room:${city.roomCode.toUpperCase()}` : `id:${city.id}`;
     const existing = byKey.get(key);
-    if (!existing || city.savedAt >= existing.savedAt || city.isGlobal) {
-      byKey.set(key, { ...existing, ...city });
+    if (!existing) {
+      byKey.set(key, city);
+      return;
     }
+
+    const newest = city.savedAt >= existing.savedAt ? city : existing;
+    const preferredGlobal = city.isGlobal ? city : existing.isGlobal ? existing : undefined;
+    byKey.set(key, {
+      ...existing,
+      ...newest,
+      cityName: chooseDisplayCityName(city, existing),
+      roomCode: city.roomCode?.toUpperCase() || existing.roomCode?.toUpperCase(),
+      playerName: preferredGlobal?.playerName || newest.playerName || existing.playerName,
+      gameState: preferredGlobal?.gameState || newest.gameState || existing.gameState,
+      isGlobal: Boolean(city.isGlobal || existing.isGlobal),
+    });
   };
 
   localCities.forEach((city) => addCity(city));
@@ -424,6 +455,7 @@ async function publishCityToLeaderboard(
     const snapshotState = cityMeta.roomCode
       ? { ...state, currentRoomCode: cityMeta.roomCode }
       : { ...state, id: cityMeta.id };
+    const publishedCityName = snapshotState.cityName || cityMeta.cityName || 'NPS City';
 
     const { error } = await supabase
       .from('city_leaderboard')
@@ -431,7 +463,7 @@ async function publishCityToLeaderboard(
         user_id: user.id,
         city_id: cityMeta.id,
         player_name: profile?.displayName || getDefaultPlayerName(user),
-        city_name: cityMeta.cityName,
+        city_name: publishedCityName,
         room_code: cityMeta.roomCode ?? null,
         money: Math.round(cityMeta.money),
         happiness: Math.round(cityMeta.happiness ?? 0),
@@ -593,7 +625,6 @@ function SavedCityCard({ city, onLoad, onDelete }: { city: SavedCityMeta; onLoad
         <div className="flex items-center gap-3 mt-1 text-xs text-white/50">
           <span>Pop: {city.population.toLocaleString()}</span>
           <span>${city.money.toLocaleString()}</span>
-          {city.roomCode && <span className="text-blue-400/60">{city.roomCode}</span>}
         </div>
       </button>
       {onDelete && (
@@ -678,21 +709,20 @@ function CityDashboard({
       </div>
 
       <div className="mt-4 overflow-hidden rounded-[24px] border border-white/10">
-        <div className="grid grid-cols-[1fr_auto] gap-2 bg-white/[0.06] px-3 py-2 text-xs uppercase tracking-wide text-white/45 sm:grid-cols-[1.2fr_.7fr_.55fr_.55fr_.55fr_.55fr_.55fr_auto]">
+        <div className="grid grid-cols-[1fr_auto] gap-2 bg-white/[0.06] px-3 py-2 text-xs uppercase tracking-wide text-white/45 sm:grid-cols-[1.35fr_.75fr_.6fr_.65fr_.6fr_.65fr_auto]">
           <span>เมือง</span>
           <span className="hidden sm:block">เงิน</span>
           <span className="hidden sm:block">สุข</span>
           <span className="hidden sm:block">สิ่งแวดล้อม</span>
           <span className="hidden sm:block">ESG</span>
           <span className="hidden sm:block">ไฟฟ้า</span>
-          <span className="hidden sm:block">รหัส</span>
           <span>ดู</span>
         </div>
         <div className="max-h-72 overflow-y-auto">
           {rankedByMoney.map((city) => (
             <div
               key={`${city.id}-${city.roomCode || 'local'}`}
-              className="grid grid-cols-[1fr_auto] items-center gap-2 border-t border-white/10 px-3 py-3 text-sm sm:grid-cols-[1.2fr_.7fr_.55fr_.55fr_.55fr_.55fr_.55fr_auto]"
+              className="grid grid-cols-[1fr_auto] items-center gap-2 border-t border-white/10 px-3 py-3 text-sm sm:grid-cols-[1.35fr_.75fr_.6fr_.65fr_.6fr_.65fr_auto]"
             >
               <div className="min-w-0">
                 <div className="truncate font-medium text-white/90">{city.cityName}</div>
@@ -708,7 +738,6 @@ function CityDashboard({
               <div className="hidden text-sky-200 sm:block">{percentValue(city.environment)}%</div>
               <div className="hidden text-teal-200 sm:block">{percentValue(city.esgScore)}%</div>
               <div className="hidden text-cyan-200 sm:block">{percentValue(city.powerReliability)}%</div>
-              <div className="hidden font-mono text-blue-300/80 sm:block">{city.roomCode || '-'}</div>
               <Button
                 type="button"
                 size="sm"
@@ -1179,6 +1208,7 @@ export default function HomePage() {
         speed: 0,
         selectedTool: 'select',
         activePanel: 'none',
+        currentRoomCode: undefined,
       };
       const compressed = compressToUTF16(JSON.stringify(viewerState));
       localStorage.setItem(READ_ONLY_EXAMPLE_STORAGE_KEY, compressed);
