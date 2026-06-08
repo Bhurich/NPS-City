@@ -673,12 +673,12 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
     mansion: 0.90, // Same as modern apartment_high scale
   },
   directAssetSrc: {
-    biomass_power_plant: '/assets/nps/biomass-power-plant-2x2-gridfit.png',
+    biomass_power_plant: '/assets/nps/biomass-power-plant-2x2-grid-aligned.png',
     solar_farm: '/assets/nps/solar-floating-gridfit.png',
     floating_solar: '/assets/nps/solar-floating-gridfit.png',
-    wood_chipping_plant: '/assets/nps/wood-chipping-facility-gridfit.png',
-    biomass_plantation: '/assets/nps/eucalyptus-biomass-plantation-gridfit.png',
-    harvested_plantation: '/assets/nps/harvested-eucalyptus-field-gridfit.png',
+    wood_chipping_plant: '/assets/nps/wood-chipping-facility-2x2-grid-aligned.png',
+    biomass_plantation: '/assets/nps/eucalyptus-plantation-1x1-grid-aligned.png',
+    harvested_plantation: '/assets/nps/harvested-eucalyptus-1x1-grid-aligned.png',
   },
   directAssetScales: {
     biomass_power_plant: 1,
