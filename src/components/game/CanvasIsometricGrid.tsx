@@ -47,6 +47,13 @@ import {
   screenToGrid,
 } from '@/components/game/utils';
 import {
+  calculateSpritePlacement,
+  drawFootprintPolygon,
+  getFootprintForObject,
+  getFootprintPolygon,
+  getObjectRenderConfig,
+} from '@/components/game/objectRenderConfig';
+import {
   drawGreenBaseTile,
   drawGreyBaseTile,
   drawBeachOnWater,
@@ -294,6 +301,15 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   const [dragEndTile, setDragEndTile] = useState<{ x: number; y: number } | null>(null);
   const [cityConnectionDialog, setCityConnectionDialog] = useState<{ direction: 'north' | 'south' | 'east' | 'west' } | null>(null);
   const keysPressedRef = useRef<Set<string>>(new Set());
+  const [renderDebugEnabled, setRenderDebugEnabled] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('nps-city-render-debug') === 'true';
+  });
+  const [calibrationEnabled, setCalibrationEnabled] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('nps-city-render-calibration-mode') === 'true';
+  });
+  const [calibrationVersion, setCalibrationVersion] = useState(0);
 
   // Only zoning tools show the grid/rectangle selection visualization
   // Note: zone_water uses supportsDragPlace behavior (place on click/drag) instead of rectangle selection
@@ -304,8 +320,147 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
 
   const PAN_DRAG_THRESHOLD = 6;
 
+  const updateSelectedObjectCalibration = useCallback((mutate: (config: ReturnType<typeof getObjectRenderConfig>) => ReturnType<typeof getObjectRenderConfig>) => {
+    if (!selectedTile || selectedTile.x < 0 || selectedTile.y < 0 || selectedTile.x >= gridSize || selectedTile.y >= gridSize) return;
+    let objectType = grid[selectedTile.y]?.[selectedTile.x]?.building.type;
+
+    if (!objectType || objectType === 'empty') {
+      const maxSize = 4;
+      for (let dy = 0; dy < maxSize && (!objectType || objectType === 'empty'); dy++) {
+        for (let dx = 0; dx < maxSize; dx++) {
+          const originX = selectedTile.x - dx;
+          const originY = selectedTile.y - dy;
+          if (originX < 0 || originY < 0 || originX >= gridSize || originY >= gridSize) continue;
+
+          const candidateType = grid[originY]?.[originX]?.building.type;
+          if (!candidateType || candidateType === 'empty' || candidateType === 'grass' || candidateType === 'water' || candidateType === 'road' || candidateType === 'tree') continue;
+
+          const size = getBuildingSize(candidateType);
+          if (
+            (size.width > 1 || size.height > 1) &&
+            selectedTile.x >= originX &&
+            selectedTile.x < originX + size.width &&
+            selectedTile.y >= originY &&
+            selectedTile.y < originY + size.height
+          ) {
+            objectType = candidateType;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!objectType || objectType === 'grass' || objectType === 'empty') return;
+
+    try {
+      const storageKey = 'nps-city-object-render-calibration';
+      const raw = localStorage.getItem(storageKey);
+      const all = raw ? JSON.parse(raw) : {};
+      const next = mutate(getObjectRenderConfig(objectType));
+      all[objectType] = {
+        scale: Number(next.scale.toFixed(4)),
+        anchor: {
+          x: Number(next.anchor.x.toFixed(4)),
+          y: Number(next.anchor.y.toFixed(4)),
+        },
+        offset: {
+          x: Number(next.offset.x.toFixed(4)),
+          y: Number(next.offset.y.toFixed(4)),
+        },
+        visualBase: {
+          left: Number(next.visualBase.left.toFixed(4)),
+          right: Number(next.visualBase.right.toFixed(4)),
+          bottom: Number(next.visualBase.bottom.toFixed(4)),
+        },
+      };
+      localStorage.setItem(storageKey, JSON.stringify(all, null, 2));
+      console.info('[NPS City Render Calibration]', objectType, all[objectType]);
+      setCalibrationVersion((version) => version + 1);
+    } catch (error) {
+      console.warn('[NPS City Render Calibration] Failed to update metadata', error);
+    }
+  }, [grid, gridSize, selectedTile]);
+
   // Use extracted building helpers (with pre-computed tile metadata for O(1) lookups)
   const { isPartOfMultiTileBuilding, findBuildingOrigin, isPartOfParkBuilding, getTileMetadata } = useBuildingHelpers(grid, gridSize);
+
+  useEffect(() => {
+    const handleRenderDebugKeys = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey && event.altKey)) return;
+
+      if (event.key.toLowerCase() === 'd') {
+        event.preventDefault();
+        setRenderDebugEnabled((enabled) => {
+          localStorage.setItem('nps-city-render-debug', String(!enabled));
+          return !enabled;
+        });
+        return;
+      }
+
+      if (event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        setCalibrationEnabled((enabled) => {
+          localStorage.setItem('nps-city-render-calibration-mode', String(!enabled));
+          return !enabled;
+        });
+        setRenderDebugEnabled(true);
+        localStorage.setItem('nps-city-render-debug', 'true');
+        return;
+      }
+
+      if (!calibrationEnabled) return;
+
+      const offsetStep = event.shiftKey ? 0.1 : 0.025;
+      const anchorStep = event.shiftKey ? 0.02 : 0.005;
+      const scaleStep = event.shiftKey ? 0.05 : 0.01;
+
+      if (event.key === '=' || event.key === '+') {
+        event.preventDefault();
+        updateSelectedObjectCalibration((config) => ({ ...config, scale: Math.min(2, config.scale + scaleStep) }));
+      } else if (event.key === '-' || event.key === '_') {
+        event.preventDefault();
+        updateSelectedObjectCalibration((config) => ({ ...config, scale: Math.max(0.1, config.scale - scaleStep) }));
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        updateSelectedObjectCalibration((config) => {
+          if (event.metaKey) {
+            const bottomDelta = event.key === 'ArrowUp' ? -anchorStep : event.key === 'ArrowDown' ? anchorStep : 0;
+            const leftDelta = event.key === 'ArrowLeft' ? -anchorStep : 0;
+            const rightDelta = event.key === 'ArrowRight' ? anchorStep : 0;
+            return {
+              ...config,
+              visualBase: {
+                left: Math.max(0, Math.min(0.95, config.visualBase.left + leftDelta)),
+                right: Math.max(0.05, Math.min(1, config.visualBase.right + rightDelta)),
+                bottom: Math.max(0.05, Math.min(1, config.visualBase.bottom + bottomDelta)),
+              },
+            };
+          }
+
+          if (event.shiftKey) {
+            return {
+              ...config,
+              anchor: {
+                x: Math.max(0, Math.min(1, config.anchor.x + (event.key === 'ArrowLeft' ? -anchorStep : event.key === 'ArrowRight' ? anchorStep : 0))),
+                y: Math.max(0, Math.min(1, config.anchor.y + (event.key === 'ArrowUp' ? -anchorStep : event.key === 'ArrowDown' ? anchorStep : 0))),
+              },
+            };
+          }
+
+          return {
+            ...config,
+            offset: {
+              x: config.offset.x + (event.key === 'ArrowLeft' ? -offsetStep : event.key === 'ArrowRight' ? offsetStep : 0),
+              y: config.offset.y + (event.key === 'ArrowUp' ? -offsetStep : event.key === 'ArrowDown' ? offsetStep : 0),
+            },
+          };
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleRenderDebugKeys);
+    return () => window.removeEventListener('keydown', handleRenderDebugKeys);
+  }, [calibrationEnabled, updateSelectedObjectCalibration]);
 
   // Use extracted vehicle systems
   const vehicleSystemRefs: VehicleSystemRefs = {
@@ -1569,50 +1724,21 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
               const scaleMultiplier = calculateSpriteScale(buildingType, spriteSourceInfo, tile.building, activePack);
               const offsets = calculateSpriteOffsets(buildingType, spriteSourceInfo, tile.building, activePack);
               
-              // Get building size for positioning
-              const buildingSize = getBuildingSize(buildingType);
-              const isMultiTile = buildingSize.width > 1 || buildingSize.height > 1;
-              
-              // Calculate draw position for multi-tile buildings
-              let drawPosX = x;
-              let drawPosY = y;
-              
-              if (isMultiTile) {
-                const frontmostOffsetX = buildingSize.width - 1;
-                const frontmostOffsetY = buildingSize.height - 1;
-                const screenOffsetX = (frontmostOffsetX - frontmostOffsetY) * (w / 2);
-                const screenOffsetY = (frontmostOffsetX + frontmostOffsetY) * (h / 2);
-                drawPosX = x + screenOffsetX;
-                drawPosY = y + screenOffsetY;
-              }
-              
-              // Calculate destination size. Direct NPS assets are already cropped
-              // isometric objects, so size them against the whole footprint.
-              const isDirectAsset = spriteSourceInfo.variantType === 'direct';
-              const directAssetRenderScale = 0.6;
-              const directFootprintScale = isDirectAsset
-                ? Math.max(1.75, Math.max(buildingSize.width, buildingSize.height) * 1.05)
-                : 1.2;
-              const destWidth = w * directFootprintScale * scaleMultiplier * (isDirectAsset ? directAssetRenderScale : 1);
-              const aspectRatio = coords.sh / coords.sw;
-              const destHeight = destWidth * aspectRatio;
-              
-              // Calculate final position with offsets. Direct assets are centered on
-              // the visual middle of the building footprint only; grid occupancy is unchanged.
-              const drawX = drawPosX + w / 2 - destWidth / 2 + offsets.horizontal * w;
-              
-              let verticalPush: number;
-              if (isDirectAsset) {
-                verticalPush = destHeight * 0.2;
-              } else if (isMultiTile) {
-                const footprintDepth = buildingSize.width + buildingSize.height - 2;
-                verticalPush = footprintDepth * h * 0.25;
-              } else {
-                verticalPush = destHeight * 0.15;
-              }
-              verticalPush += offsets.vertical * h;
-              
-              const drawY = drawPosY + h - destHeight + verticalPush;
+              const placement = calculateSpritePlacement(
+                buildingType,
+                tile.x,
+                tile.y,
+                coords.sw,
+                coords.sh,
+                scaleMultiplier
+              );
+
+              // Legacy sprite-pack offsets still work, but are applied through
+              // the deterministic footprint placement instead of moving grid data.
+              const drawX = placement.drawX + offsets.horizontal * w;
+              const drawY = placement.drawY + offsets.vertical * h;
+              const destWidth = placement.destWidth;
+              const destHeight = placement.destHeight;
               
               // Determine flip based on road adjacency or random
               const isWaterfrontAsset = requiresWaterAdjacency(buildingType);
@@ -1653,6 +1779,45 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                   Math.round(drawX), Math.round(drawY),
                   Math.round(destWidth), Math.round(destHeight)
                 );
+              }
+
+              if (renderDebugEnabled) {
+                const config = getObjectRenderConfig(buildingType);
+                const visualBaseY = drawY + destHeight * config.visualBase.bottom;
+                const visualBaseLeft = drawX + destWidth * config.visualBase.left;
+                const visualBaseRight = drawX + destWidth * config.visualBase.right;
+
+                drawFootprintPolygon(ctx, placement.footprint, {
+                  stroke: calibrationEnabled ? '#fbbf24' : '#22d3ee',
+                  lineWidth: 1.5,
+                  dash: [6, 4],
+                });
+
+                ctx.save();
+                ctx.strokeStyle = 'rgba(251, 191, 36, 0.9)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(drawX, drawY, destWidth, destHeight);
+                ctx.strokeStyle = 'rgba(16, 185, 129, 0.95)';
+                ctx.beginPath();
+                ctx.moveTo(visualBaseLeft, visualBaseY);
+                ctx.lineTo(visualBaseRight, visualBaseY);
+                ctx.stroke();
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.arc(placement.anchorPoint.x, placement.anchorPoint.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                if (zoom >= 0.75) {
+                  ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+                  ctx.textBaseline = 'top';
+                  ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
+                  const label = `${buildingType} ${config.footprint?.width ?? 1}x${config.footprint?.height ?? 1} s:${config.scale.toFixed(2)} ox:${config.offset.x.toFixed(2)} oy:${config.offset.y.toFixed(2)} ax:${config.anchor.x.toFixed(2)} ay:${config.anchor.y.toFixed(2)}`;
+                  const labelWidth = ctx.measureText(label).width + 8;
+                  ctx.fillRect(placement.footprint.bounds.minX, placement.footprint.bounds.minY - 16, labelWidth, 14);
+                  ctx.fillStyle = '#f8fafc';
+                  ctx.fillText(label, placement.footprint.bounds.minX + 4, placement.footprint.bounds.minY - 14);
+                }
+                ctx.restore();
               }
             }
           } else if (spriteSourceInfo.variantType === 'direct') {
@@ -2190,7 +2355,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       }
     };
   // PERF: hoveredTile and selectedTile removed from deps - now rendered on separate hover canvas layer
-  }, [grid, gridSize, offset, zoom, overlayMode, imagesLoaded, imageLoadVersion, canvasSize, dragStartTile, dragEndTile, state.services, currentSpritePack, waterBodies, getTileMetadata, showsDragGrid, isMobile]);
+  }, [grid, gridSize, offset, zoom, overlayMode, imagesLoaded, imageLoadVersion, canvasSize, dragStartTile, dragEndTile, state.services, currentSpritePack, waterBodies, getTileMetadata, showsDragGrid, isMobile, renderDebugEnabled, calibrationEnabled, calibrationVersion]);
   
   // PERF: Lightweight hover/selection overlay - renders ONLY tile highlights
   // This runs frequently (on mouse move) but is extremely fast since it only draws simple shapes
@@ -2212,25 +2377,19 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     ctx.translate(offset.x, offset.y);
     ctx.scale(zoom, zoom);
     
-    // Helper to draw highlight diamond
-    const drawHighlight = (screenX: number, screenY: number, color: string = 'rgba(255, 255, 255, 0.25)', strokeColor: string = '#ffffff') => {
-      const w = TILE_WIDTH;
-      const h = TILE_HEIGHT;
-      
-      // Draw semi-transparent fill
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(screenX + w / 2, screenY);
-      ctx.lineTo(screenX + w, screenY + h / 2);
-      ctx.lineTo(screenX + w / 2, screenY + h);
-      ctx.lineTo(screenX, screenY + h / 2);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Draw border
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 2;
-      ctx.stroke();
+    // Helper to draw a deterministic footprint highlight from grid data.
+    const drawHighlight = (
+      gridX: number,
+      gridY: number,
+      footprint = { width: 1, height: 1 },
+      color: string = 'rgba(255, 255, 255, 0.25)',
+      strokeColor: string = '#ffffff'
+    ) => {
+      drawFootprintPolygon(ctx, getFootprintPolygon(gridX, gridY, footprint), {
+        fill: color,
+        stroke: strokeColor,
+        lineWidth: 2,
+      });
     };
     
     // Draw hovered tile highlight (with multi-tile preview for buildings)
@@ -2240,25 +2399,13 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       const isBuildingTool = selectedTool && !nonBuildingTools.includes(selectedTool);
       
       if (isBuildingTool) {
-        // Get building size and draw preview for all tiles in footprint
         const buildingType = selectedTool as BuildingType;
-        const buildingSize = getBuildingSize(buildingType);
-        
-        // Draw highlight for each tile in the building footprint
-        for (let dx = 0; dx < buildingSize.width; dx++) {
-          for (let dy = 0; dy < buildingSize.height; dy++) {
-            const tx = hoveredTile.x + dx;
-            const ty = hoveredTile.y + dy;
-            if (tx >= 0 && tx < gridSize && ty >= 0 && ty < gridSize) {
-              const { screenX, screenY } = gridToScreen(tx, ty, 0, 0);
-              drawHighlight(screenX, screenY);
-            }
-          }
+        const footprint = getFootprintForObject(buildingType);
+        if (hoveredTile.x + footprint.width - 1 < gridSize && hoveredTile.y + footprint.height - 1 < gridSize) {
+          drawHighlight(hoveredTile.x, hoveredTile.y, footprint);
         }
       } else {
-        // Single tile highlight for non-building tools
-        const { screenX, screenY } = gridToScreen(hoveredTile.x, hoveredTile.y, 0, 0);
-        drawHighlight(screenX, screenY);
+        drawHighlight(hoveredTile.x, hoveredTile.y);
       }
     }
     
@@ -2266,18 +2413,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     if (selectedTile && selectedTile.x >= 0 && selectedTile.x < gridSize && selectedTile.y >= 0 && selectedTile.y < gridSize) {
       const selectedOrigin = grid[selectedTile.y]?.[selectedTile.x];
       if (selectedOrigin) {
-        const selectedSize = getBuildingSize(selectedOrigin.building.type);
-        // Draw highlight for each tile in the building footprint
-        for (let dx = 0; dx < selectedSize.width; dx++) {
-          for (let dy = 0; dy < selectedSize.height; dy++) {
-            const tx = selectedTile.x + dx;
-            const ty = selectedTile.y + dy;
-            if (tx >= 0 && tx < gridSize && ty >= 0 && ty < gridSize) {
-              const { screenX, screenY } = gridToScreen(tx, ty, 0, 0);
-              drawHighlight(screenX, screenY, 'rgba(100, 200, 255, 0.3)', '#60a5fa');
-            }
-          }
-        }
+        const multiTileOrigin = findBuildingOrigin(selectedTile.x, selectedTile.y);
+        const originX = multiTileOrigin?.originX ?? selectedTile.x;
+        const originY = multiTileOrigin?.originY ?? selectedTile.y;
+        const objectType = multiTileOrigin?.buildingType ?? selectedOrigin.building.type;
+        const selectedSize = getFootprintForObject(objectType);
+        drawHighlight(originX, originY, selectedSize, 'rgba(100, 200, 255, 0.3)', '#60a5fa');
       }
     }
     
@@ -2381,23 +2522,22 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       
       // Draw preview for each tile in the path
       for (const tile of pathTiles) {
-        const { screenX, screenY } = gridToScreen(tile.x, tile.y, 0, 0);
         const key = `${tile.x},${tile.y}`;
         const status = bridgeAnalysis.get(key) || 'land';
         
         if (status === 'valid') {
           // Valid bridge - show blue/cyan placeholder
-          drawHighlight(screenX, screenY, 'rgba(59, 130, 246, 0.5)', '#3b82f6');
+          drawHighlight(tile.x, tile.y, { width: 1, height: 1 }, 'rgba(59, 130, 246, 0.5)', '#3b82f6');
         } else if (status === 'invalid') {
           // Invalid water crossing - show red
-          drawHighlight(screenX, screenY, 'rgba(239, 68, 68, 0.5)', '#ef4444');
+          drawHighlight(tile.x, tile.y, { width: 1, height: 1 }, 'rgba(239, 68, 68, 0.5)', '#ef4444');
         }
         // Land tiles don't need special preview - they're already being placed
       }
     }
     
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-  }, [hoveredTile, selectedTile, selectedTool, offset, zoom, gridSize, grid, isDragging, dragStartTile, dragEndTile]);
+  }, [hoveredTile, selectedTile, selectedTool, offset, zoom, gridSize, grid, isDragging, dragStartTile, dragEndTile, findBuildingOrigin]);
   
   // Animate decorative car traffic AND emergency vehicles on top of the base canvas
   useEffect(() => {
