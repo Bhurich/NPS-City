@@ -41,6 +41,15 @@ create trigger city_leaderboard_updated_at
 
 do $$
 begin
+  drop policy if exists "Anyone can view public leaderboard" on public.city_leaderboard;
+  drop policy if exists "Users can insert own city" on public.city_leaderboard;
+  drop policy if exists "Users can update own city" on public.city_leaderboard;
+  drop policy if exists "Anyone can read public city leaderboard" on public.city_leaderboard;
+  drop policy if exists "Anyone can create city leaderboard rows" on public.city_leaderboard;
+  drop policy if exists "Anyone can update city leaderboard rows" on public.city_leaderboard;
+  drop policy if exists "Anyone can delete city leaderboard rows" on public.city_leaderboard;
+  drop policy if exists "Users can delete own city" on public.city_leaderboard;
+
   if not exists (
     select 1 from pg_policies
     where schemaname = 'public'
@@ -54,22 +63,18 @@ begin
       using (is_public = true);
   end if;
 
-  if not exists (
-    select 1 from pg_policies
-    where schemaname = 'public'
-      and tablename = 'city_leaderboard'
-      and policyname = 'Anyone can create city leaderboard rows'
-  ) then
-    create policy "Anyone can create city leaderboard rows"
-      on public.city_leaderboard
-      for insert
-      to anon, authenticated
-      with check (true);
-  end if;
+  create policy "Users can insert own city"
+    on public.city_leaderboard
+    for insert
+    to authenticated
+    with check (auth.uid() = user_id);
 
-  drop policy if exists "Anyone can update city leaderboard rows" on public.city_leaderboard;
-  drop policy if exists "Anyone can delete city leaderboard rows" on public.city_leaderboard;
-  drop policy if exists "Users can delete own city" on public.city_leaderboard;
+  create policy "Users can update own city"
+    on public.city_leaderboard
+    for update
+    to authenticated
+    using (auth.uid() = user_id)
+    with check (auth.uid() = user_id);
 
   create policy "Users can delete own city"
     on public.city_leaderboard

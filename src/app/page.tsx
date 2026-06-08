@@ -47,6 +47,7 @@ type DashboardCity = SavedCityMeta & {
 };
 
 type LeaderboardRow = {
+  user_id?: string | null;
   city_id: string;
   player_name: string | null;
   city_name: string;
@@ -271,6 +272,43 @@ function loadSavedCities(scope: StorageScope): SavedCityMeta[] {
     return [];
   }
   return [];
+}
+
+function loadLegacySavedCitiesForRecovery(): SavedCityMeta[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const saved = localStorage.getItem(SAVED_CITIES_INDEX_KEY);
+    if (!saved) return [];
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? normalizeSavedCities(parsed as SavedCityMeta[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function importLegacySavedCitiesToScope(scope: StorageScope): SavedCityMeta[] {
+  const legacyCities = loadLegacySavedCitiesForRecovery();
+  if (!legacyCities.length) return [];
+
+  const scopedCities = loadSavedCities(scope);
+  const mergedByKey = new Map<string, SavedCityMeta>();
+
+  for (const city of [...scopedCities, ...legacyCities]) {
+    const key = city.roomCode ? `room:${city.roomCode.toUpperCase()}` : `id:${city.id}`;
+    const existing = mergedByKey.get(key);
+    if (!existing || city.savedAt > existing.savedAt) {
+      mergedByKey.set(key, city);
+    }
+
+    const legacySnapshot = localStorage.getItem(SAVED_CITY_PREFIX + city.id);
+    if (legacySnapshot && !localStorage.getItem(getSavedCityStorageKey(scope, city.id))) {
+      localStorage.setItem(getSavedCityStorageKey(scope, city.id), legacySnapshot);
+    }
+  }
+
+  const imported = normalizeSavedCities(Array.from(mergedByKey.values())).slice(0, 20);
+  localStorage.setItem(getSavedCitiesIndexKey(scope), JSON.stringify(imported));
+  return imported;
 }
 
 function hydrateMissingCitySnapshots(cities: SavedCityMeta[], scope: StorageScope): void {
@@ -546,6 +584,32 @@ async function loadGlobalDashboardCities(): Promise<DashboardCity[]> {
   }
 }
 
+async function loadAccountSavedCities(userId: string | undefined): Promise<DashboardCity[]> {
+  if (!supabase || !userId) return [];
+  try {
+    const { data, error } = await supabase
+      .from('city_leaderboard')
+      .select('user_id, city_id, player_name, city_name, room_code, money, happiness, environment, esg_score, power_reliability, population, game_state, updated_at')
+      .eq('user_id', userId)
+      .eq('is_public', true)
+      .order('updated_at', { ascending: false })
+      .limit(50);
+
+    if (error) {
+      console.warn('[My Cities] Failed to load account cities:', error.message);
+      return [];
+    }
+
+    return (data as LeaderboardRow[] | null)?.map((row) => ({
+      ...leaderboardRowToCity(row),
+      isGlobal: false,
+    })) ?? [];
+  } catch (e) {
+    console.warn('[My Cities] Failed to load account cities:', e);
+    return [];
+  }
+}
+
 async function publishCityToLeaderboard(
   state: GameState,
   user: User | null,
@@ -587,26 +651,35 @@ async function publishCityToLeaderboard(
   }
 }
 
-async function deleteCityFromLeaderboard(city: SavedCityMeta): Promise<boolean> {
+async function deleteCityFromLeaderboard(city: SavedCityMeta, userId?: string, allowAdminDelete = false): Promise<boolean> {
   if (!supabase) return true;
+  if (!allowAdminDelete && !userId) return false;
   try {
     const normalizedRoomCode = city.roomCode?.toUpperCase();
     let failed = false;
 
     if (normalizedRoomCode) {
-      const { error: hideError } = await supabase
+      let hideQuery = supabase
         .from('city_leaderboard')
         .update({ is_public: false })
         .eq('room_code', normalizedRoomCode);
+      if (!allowAdminDelete && userId) {
+        hideQuery = hideQuery.eq('user_id', userId);
+      }
+      const { error: hideError } = await hideQuery;
       if (hideError) {
         failed = true;
         console.warn('[Dashboard] Failed to hide leaderboard city by room:', hideError.message);
       }
 
-      const { error: deleteError } = await supabase
+      let deleteQuery = supabase
         .from('city_leaderboard')
         .delete()
         .eq('room_code', normalizedRoomCode);
+      if (!allowAdminDelete && userId) {
+        deleteQuery = deleteQuery.eq('user_id', userId);
+      }
+      const { error: deleteError } = await deleteQuery;
       if (deleteError) {
         failed = true;
         console.warn('[Dashboard] Failed to delete leaderboard city by room:', deleteError.message);
@@ -615,19 +688,27 @@ async function deleteCityFromLeaderboard(city: SavedCityMeta): Promise<boolean> 
       // Do not delete game_rooms from the public client. Without an owner column
       // on that table, deleting rooms here would let users remove rooms they do not own.
     } else {
-      const { error: hideError } = await supabase
+      let hideQuery = supabase
         .from('city_leaderboard')
         .update({ is_public: false })
         .eq('city_id', city.id);
+      if (!allowAdminDelete && userId) {
+        hideQuery = hideQuery.eq('user_id', userId);
+      }
+      const { error: hideError } = await hideQuery;
       if (hideError) {
         failed = true;
         console.warn('[Dashboard] Failed to hide leaderboard city by id:', hideError.message);
       }
 
-      const { error: deleteError } = await supabase
+      let deleteQuery = supabase
         .from('city_leaderboard')
         .delete()
         .eq('city_id', city.id);
+      if (!allowAdminDelete && userId) {
+        deleteQuery = deleteQuery.eq('user_id', userId);
+      }
+      const { error: deleteError } = await deleteQuery;
       if (deleteError) {
         failed = true;
         console.warn('[Dashboard] Failed to delete leaderboard city by id:', deleteError.message);
@@ -910,6 +991,174 @@ function CityDashboard({
         </div>
       </div>
     </section>
+  );
+}
+
+function MyCitiesPage({
+  user,
+  profile,
+  cities,
+  loading,
+  onBack,
+  onRefresh,
+  legacyRecoverableCount,
+  onImportLegacy,
+  onLoad,
+  onDelete,
+  onLogin,
+}: {
+  user: User | null;
+  profile: PlayerProfile | null;
+  cities: DashboardCity[];
+  loading: boolean;
+  onBack: () => void;
+  onRefresh: () => void;
+  legacyRecoverableCount: number;
+  onImportLegacy: () => void;
+  onLoad: (city: DashboardCity) => void;
+  onDelete: (city: DashboardCity) => void;
+  onLogin: () => void;
+}) {
+  return (
+    <main className="min-h-screen overflow-y-auto bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-5 py-6 text-white sm:px-8">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <button
+              type="button"
+              onClick={onBack}
+              className="mb-3 text-sm text-white/45 transition-colors hover:text-white/80"
+            >
+              กลับหน้าแรก
+            </button>
+            <h1 className="text-4xl font-light tracking-wide sm:text-5xl">เมืองของฉัน</h1>
+            <p className="mt-2 text-sm text-white/45">
+              บันทึกเมืองของบัญชีนี้เท่านั้น ไม่รวมเมืองของผู้เล่นคนอื่นใน Dashboard
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onRefresh}
+            disabled={loading}
+            className="rounded-full border-white/15 bg-white/[0.04] px-5 text-white/70 hover:bg-white/15 hover:text-white"
+          >
+            {loading ? 'กำลังโหลด...' : 'รีเฟรช'}
+          </Button>
+        </div>
+
+        {!user ? (
+          <section className="rounded-[32px] border border-white/10 bg-white/[0.055] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.22)]">
+            <h2 className="text-xl font-semibold">ต้องเข้าสู่ระบบก่อน</h2>
+            <p className="mt-2 text-sm text-white/45">
+              เพื่อให้เกมรู้ว่าเมืองไหนเป็นของ Account ไหน กรุณา Login ด้วย Google ก่อนเปิดรายการเมืองของฉัน
+            </p>
+            <Button
+              type="button"
+              onClick={onLogin}
+              className="mt-5 rounded-full bg-blue-500 px-5 text-white hover:bg-blue-400"
+            >
+              เข้าสู่ระบบด้วย Google
+            </Button>
+          </section>
+        ) : (
+          <>
+            <section className="rounded-[32px] border border-white/10 bg-white/[0.055] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.22)]">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs text-white/40">บัญชีผู้เล่น</div>
+                  <div className="mt-1 text-lg font-semibold">{profile?.displayName || getDefaultPlayerName(user)}</div>
+                  <div className="text-sm text-white/40">{user.email}</div>
+                </div>
+                <div className="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-100">
+                  {cities.length} เมือง
+                </div>
+              </div>
+            </section>
+
+            {legacyRecoverableCount > 0 && (
+              <section className="rounded-[28px] border border-amber-300/25 bg-amber-300/10 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-amber-100">พบบันทึกเมืองเก่าในเครื่องนี้ {legacyRecoverableCount} เมือง</div>
+                    <p className="mt-1 text-sm text-amber-100/60">
+                      ระบบไม่ย้ายให้อัตโนมัติ เพราะเครื่องนี้อาจเคยใช้หลายบัญชี กดนำเข้าเมื่อแน่ใจว่าเป็นเมืองของบัญชีนี้
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={onImportLegacy}
+                    className="rounded-full bg-amber-300 px-5 text-slate-950 hover:bg-amber-200"
+                  >
+                    นำเข้าบันทึกเก่า
+                  </Button>
+                </div>
+              </section>
+            )}
+
+            <section className="overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.055] shadow-[0_24px_80px_rgba(0,0,0,0.22)]">
+              <div className="grid grid-cols-[1fr_auto] gap-2 bg-white/[0.06] px-4 py-3 text-xs uppercase tracking-wide text-white/45 sm:grid-cols-[1.35fr_.75fr_.6fr_.65fr_.65fr_auto]">
+                <span>เมือง</span>
+                <span className="hidden sm:block">เงิน</span>
+                <span className="hidden sm:block">สุข</span>
+                <span className="hidden sm:block">สิ่งแวดล้อม</span>
+                <span className="hidden sm:block">แหล่งข้อมูล</span>
+                <span>จัดการ</span>
+              </div>
+              <div className="max-h-[62vh] overflow-y-auto">
+                {cities.map((city) => (
+                  <div
+                    key={`${city.id}-${city.roomCode || 'local'}`}
+                    className="grid grid-cols-[1fr_auto] items-center gap-3 border-t border-white/10 px-4 py-4 text-sm sm:grid-cols-[1.35fr_.75fr_.6fr_.65fr_.65fr_auto]"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-base font-medium text-white/90">{city.cityName}</div>
+                      <div className="mt-1 text-xs text-white/40">
+                        Pop {city.population.toLocaleString()} · {city.roomCode ? `Co-op ${city.roomCode}` : 'เมืองเดี่ยว'}
+                      </div>
+                      <div className="mt-1 text-xs text-white/40 sm:hidden">
+                        {formatCurrency(city.money)} · สุข {percentValue(city.happiness)}% · สิ่งแวดล้อม {percentValue(city.environment)}%
+                      </div>
+                    </div>
+                    <div className="hidden text-emerald-300 sm:block">{formatCurrency(city.money)}</div>
+                    <div className="hidden text-amber-200 sm:block">{percentValue(city.happiness)}%</div>
+                    <div className="hidden text-sky-200 sm:block">{percentValue(city.environment)}%</div>
+                    <div className="hidden text-white/45 sm:block">{city.gameState ? 'Supabase' : 'เครื่องนี้'}</div>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => onLoad(city)}
+                        className="rounded-full bg-blue-500 px-4 text-white hover:bg-blue-400"
+                      >
+                        เล่นต่อ
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onDelete(city)}
+                        className="rounded-full border-red-300/25 bg-red-500/10 px-3 text-red-100 hover:bg-red-500/20"
+                      >
+                        ลบ
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+                {cities.length === 0 && (
+                  <div className="px-6 py-12 text-center">
+                    <div className="text-lg font-semibold text-white/80">ยังไม่มีเมืองที่บันทึกในบัญชีนี้</div>
+                    <p className="mx-auto mt-2 max-w-lg text-sm text-white/45">
+                      ถ้าเคยสร้างเมืองไว้แล้ว ให้เข้าเกมและกดออกจากเกมหนึ่งครั้งเพื่อให้ระบบ sync เมืองขึ้น Supabase หรือกดรีเฟรชหลังจาก Deploy ล่าสุด
+                    </p>
+                  </div>
+                )}
+              </div>
+            </section>
+          </>
+        )}
+      </div>
+    </main>
   );
 }
 
@@ -1235,6 +1484,10 @@ export default function HomePage() {
   const [showGame, setShowGame] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
   const [savedCities, setSavedCities] = useState<SavedCityMeta[]>([]);
+  const [myCities, setMyCities] = useState<DashboardCity[]>([]);
+  const [legacyRecoverableCities, setLegacyRecoverableCities] = useState<SavedCityMeta[]>([]);
+  const [showMyCitiesPage, setShowMyCitiesPage] = useState(false);
+  const [isLoadingMyCities, setIsLoadingMyCities] = useState(false);
   const [dashboardCities, setDashboardCities] = useState<DashboardCity[]>([]);
   const [globalCities, setGlobalCities] = useState<DashboardCity[]>([]);
   const [hasSaved, setHasSaved] = useState(false);
@@ -1275,6 +1528,32 @@ export default function HomePage() {
     setHasSaved(hasSavedGame(storageScope));
   };
 
+  const refreshMyCities = async () => {
+    setIsLoadingMyCities(true);
+    try {
+      const localCities = loadSavedCities(storageScope).filter((city) => !isCityMarkedDeleted(city, storageScope));
+      const remoteOwnCities = (await loadAccountSavedCities(authUser?.id)).filter((city) => !isCityMarkedDeleted(city, storageScope));
+      const mergedOwnCities = mergeDashboardCities(localCities, remoteOwnCities).filter((city) => !isCityMarkedDeleted(city, storageScope));
+      setSavedCities(localCities);
+      setMyCities(mergedOwnCities);
+      setLegacyRecoverableCities(loadLegacySavedCitiesForRecovery().filter((city) => {
+        const key = city.roomCode ? `room:${city.roomCode.toUpperCase()}` : `id:${city.id}`;
+        return !mergedOwnCities.some((ownCity) => {
+          const ownKey = ownCity.roomCode ? `room:${ownCity.roomCode.toUpperCase()}` : `id:${ownCity.id}`;
+          return ownKey === key;
+        });
+      }));
+      setHasSaved(hasSavedGame(storageScope) || mergedOwnCities.length > 0);
+    } finally {
+      setIsLoadingMyCities(false);
+    }
+  };
+
+  const importLegacyCities = async () => {
+    importLegacySavedCitiesToScope(storageScope);
+    await refreshMyCities();
+  };
+
   // Check for saved game and room code in URL after mount
   useEffect(() => {
     const checkSavedGame = () => {
@@ -1308,6 +1587,10 @@ export default function HomePage() {
   useEffect(() => {
     refreshDashboardCities();
   }, [storageScope]);
+
+  useEffect(() => {
+    refreshMyCities();
+  }, [storageScope, authUser?.id]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1551,6 +1834,7 @@ export default function HomePage() {
     localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
     localStorage.removeItem(READ_ONLY_EXAMPLE_STORAGE_KEY);
     await refreshDashboardCities();
+    await refreshMyCities();
     // Clear room code from URL
     window.history.replaceState({}, '', '/');
   };
@@ -1578,6 +1862,41 @@ export default function HomePage() {
       }
     } catch {
       console.error('Failed to load saved city');
+    }
+  };
+
+  const loadMyCity = async (city: DashboardCity) => {
+    try {
+      if (city.gameState) {
+        const remoteState = decodeSavedGameState(city.gameState);
+        if (remoteState) {
+          const roomCode = city.roomCode?.toUpperCase() || remoteState.currentRoomCode?.toUpperCase();
+          const playableState = {
+            ...remoteState,
+            cityName: remoteState.cityName || city.cityName,
+            currentRoomCode: roomCode,
+          };
+          const compressed = compressToUTF16(JSON.stringify(playableState));
+          localStorage.setItem(STORAGE_KEY, compressed);
+          markActiveSaveOwner(storageScope);
+          if (roomCode) {
+            markOwnedRoomCode(roomCode, storageScope);
+            saveCityToIndex(playableState, roomCode, storageScope);
+          } else {
+            saveCityToIndex(playableState, undefined, storageScope);
+          }
+          localStorage.removeItem(READ_ONLY_VIEW_STORAGE_KEY);
+          localStorage.removeItem(READ_ONLY_EXAMPLE_STORAGE_KEY);
+          setReadOnlyMode(false);
+          setShowMyCitiesPage(false);
+          setShowGame(true);
+          return;
+        }
+      }
+
+      loadSavedCity(city);
+    } catch (e) {
+      console.error('Failed to load account city:', e);
     }
   };
 
@@ -1667,9 +1986,10 @@ export default function HomePage() {
       if (normalizedRoomCode) {
         localStorage.removeItem(getSavedCityStorageKey(storageScope, `coop-${normalizedRoomCode}`));
       }
-      const deletedFromCloud = await deleteCityFromLeaderboard(city);
+      const deletedFromCloud = await deleteCityFromLeaderboard(city, authUser?.id, adminUnlocked);
       setCityPendingDelete(null);
       await refreshDashboardCities();
+      await refreshMyCities();
 
       if (!deletedFromCloud && isSupabaseConfigured) {
         setDeleteCityError('ลบในเครื่องแล้ว แต่ Supabase ยังลบไม่สำเร็จ ตรวจสอบ policy ของตาราง city_leaderboard/game_rooms');
@@ -1891,6 +2211,33 @@ export default function HomePage() {
     );
   }
 
+  if (showMyCitiesPage) {
+    return (
+      <MultiplayerContextProvider>
+        <MyCitiesPage
+          user={authUser}
+          profile={playerProfile}
+          cities={myCities}
+          loading={isLoadingMyCities}
+          onBack={() => setShowMyCitiesPage(false)}
+          onRefresh={refreshMyCities}
+          legacyRecoverableCount={legacyRecoverableCities.length}
+          onImportLegacy={importLegacyCities}
+          onLoad={loadMyCity}
+          onDelete={requestDeleteCity}
+          onLogin={handleGoogleLogin}
+        />
+        {profileDialog}
+        {landingDialogs}
+      </MultiplayerContextProvider>
+    );
+  }
+
+  const openMyCitiesPage = () => {
+    setShowMyCitiesPage(true);
+    void refreshMyCities();
+  };
+
   // Mobile landing page
   if (isMobile) {
     return (
@@ -1933,6 +2280,14 @@ export default function HomePage() {
             </Button>
 
             <Button
+              onClick={openMyCitiesPage}
+              variant="outline"
+              className="w-full py-4 sm:py-6 text-lg sm:text-xl font-light tracking-wide bg-cyan-300/10 hover:bg-cyan-300/20 text-cyan-100 border border-cyan-300/25 rounded-none transition-all duration-300"
+            >
+              เมืองของฉัน
+            </Button>
+
+            <Button
               onClick={openCoopSetup}
               variant="outline"
               className="w-full py-4 sm:py-6 text-lg sm:text-xl font-light tracking-wide bg-white/5 hover:bg-white/15 text-white/60 hover:text-white border border-white/15 rounded-none transition-all duration-300"
@@ -1952,22 +2307,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {savedCities.length > 0 && (
-            <section className="mt-4 w-full max-w-xs flex-shrink-0">
-              <div className="mb-2 text-sm font-medium text-white/65">เมืองที่บันทึกไว้</div>
-              <div className="max-h-48 overflow-y-auto border border-white/10 bg-white/[0.035]">
-                {savedCities.map((city) => (
-                  <SavedCityCard
-                    key={`${city.id}-${city.roomCode || 'local'}`}
-                    city={city}
-                    onLoad={() => loadSavedCity(city)}
-                    onDelete={() => requestDeleteCity(city)}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-          
           {/* Dashboard - read-only city viewer */}
           {dashboardCities.length > 0 && (
             <div className="mt-3 w-full flex-1">
@@ -2024,6 +2363,13 @@ export default function HomePage() {
                 {hasSaved ? <T>Continue</T> : <T>New Game</T>}
               </Button>
               <Button
+                onClick={openMyCitiesPage}
+                variant="outline"
+                className="w-64 py-8 text-2xl font-light tracking-wide bg-cyan-300/10 hover:bg-cyan-300/20 text-cyan-100 border border-cyan-300/25 rounded-none transition-all duration-300"
+              >
+                เมืองของฉัน
+              </Button>
+              <Button
                 onClick={openCoopSetup}
                 variant="outline"
                 className="w-64 py-8 text-2xl font-light tracking-wide bg-white/5 hover:bg-white/15 text-white/60 hover:text-white border border-white/15 rounded-none transition-all duration-300"
@@ -2042,21 +2388,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {savedCities.length > 0 && (
-              <section className="w-64">
-                <div className="mb-2 text-sm font-medium text-white/65">เมืองที่บันทึกไว้</div>
-                <div className="max-h-64 overflow-y-auto border border-white/10 bg-white/[0.035]">
-                  {savedCities.map((city) => (
-                    <SavedCityCard
-                      key={`${city.id}-${city.roomCode || 'local'}`}
-                      city={city}
-                      onLoad={() => loadSavedCity(city)}
-                      onDelete={() => requestDeleteCity(city)}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
             </div>
 
             {/* Right - Sprite Gallery */}
