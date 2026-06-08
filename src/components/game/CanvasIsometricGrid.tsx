@@ -118,6 +118,14 @@ import {
 import { Train } from '@/components/game/types';
 import { useLightingSystem } from '@/components/game/lightingSystem';
 
+const SELF_BASE_ASSET_TYPES = new Set<BuildingType>([
+  'biomass_power_plant',
+  'floating_solar',
+  'wood_chipping_plant',
+  'biomass_plantation',
+  'harvested_plantation',
+]);
+
 // Props interface for CanvasIsometricGrid
 export interface CanvasIsometricGridProps {
   overlayMode: OverlayMode;
@@ -1476,6 +1484,13 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       
       ctx.restore();
     }
+
+    function hasSelfContainedVisualBase(gridX: number, gridY: number, tile: Tile): boolean {
+      if (SELF_BASE_ASSET_TYPES.has(tile.building.type)) return true;
+      if (tile.building.type !== 'empty') return false;
+      const origin = findBuildingOrigin(gridX, gridY);
+      return origin ? SELF_BASE_ASSET_TYPES.has(origin.buildingType) : false;
+    }
     
     // Draw building sprite
     function drawBuilding(ctx: CanvasRenderingContext2D, x: number, y: number, tile: Tile) {
@@ -1889,7 +1904,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         const isSubwayStationHighlight = overlayMode === 'subway' && tile.building.type === 'subway_station';
         drawIsometricTile(ctx, screenX, screenY, tile, !!(isInDragRect || isSubwayStationHighlight), zoom, true, needsGreenBaseOverWater || needsGreenBaseForPark);
         
-        if (needsGreyBase) {
+        if (needsGreyBase && !hasSelfContainedVisualBase(x, y, tile)) {
           baseTileQueue.push({ screenX, screenY, tile, depth: x + y });
         }
         
@@ -2355,7 +2370,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       }
     };
   // PERF: hoveredTile and selectedTile removed from deps - now rendered on separate hover canvas layer
-  }, [grid, gridSize, offset, zoom, overlayMode, imagesLoaded, imageLoadVersion, canvasSize, dragStartTile, dragEndTile, state.services, currentSpritePack, waterBodies, getTileMetadata, showsDragGrid, isMobile, renderDebugEnabled, calibrationEnabled, calibrationVersion]);
+  }, [grid, gridSize, offset, zoom, overlayMode, imagesLoaded, imageLoadVersion, canvasSize, dragStartTile, dragEndTile, state.services, currentSpritePack, waterBodies, getTileMetadata, showsDragGrid, isMobile, renderDebugEnabled, calibrationEnabled, calibrationVersion, findBuildingOrigin]);
   
   // PERF: Lightweight hover/selection overlay - renders ONLY tile highlights
   // This runs frequently (on mouse move) but is extremely fast since it only draws simple shapes
